@@ -549,7 +549,7 @@ def main():
                 if post.isdigit():
                     o_logger.debug("Found ID: {} Service: {}".format(post, service_db[SERVICE_DEFAULT]['name']))
                     queue_picture(message, SERVICE_DEFAULT, post)
-        elif any(service_db_item['post_url'] in param[0] for service_db_item in service_db):
+        elif any(service_db_item['post_url'] in param[0] for service_db_item in service_db.values()):
             o_logger.debug("Found service link")
             list_of_links = [x.strip() for x in filter(None, message.text.split())]
             for link in list_of_links:
