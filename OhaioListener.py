@@ -52,10 +52,13 @@ def main():
         def decorator(func):
             @wraps(func)
             def wrapper(message):
-                if users.get(message.chat.id, 0) >= access_number:
+                if users.get(message.from_user.id, 0) >= access_number:
                     func(message)
                 else:
-                    send_message(message.chat.id, "Not allowed!")
+                    if isinstance(message,telebot.types.CallbackQuery):
+                        answer_callback(message.id,"Not allowed!")
+                    else:
+                        send_message(message.from_user.id, "Not allowed!")
 
             return wrapper
 
@@ -125,6 +128,10 @@ def main():
                disable_notification=None):
         return bot.send_photo( chat_id=chat_id, photo=photo, caption=caption, reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
                    disable_notification=disable_notification)
+
+    @bot_action
+    def answer_callback(callback_query_id,text=None, show_alert=None, url=None, cache_time=None):
+        return bot.answer_callback_query(callback_query_id=callback_query_id, text=text, show_alert=show_alert, url=url, cache_time=cache_time)
 
     # bot main actions end
 
@@ -312,6 +319,7 @@ def main():
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
     @bot.callback_query_handler(func=lambda call: True)
+    @access(1)
     def callback_query(call):
         # nonlocal curjob
         if call.data.startswith("user_allow"):
@@ -366,7 +374,7 @@ def main():
 
 
             elif call.data.startswith("rec_finish"):
-                bot.answer_callback_query(call.id,"Обработка началась")
+                answer_callback(call.id,"Обработка началась")
 
                 id = call.data[len("rec_finish"):]
                 with session_scope() as session:
@@ -405,7 +413,7 @@ def main():
                             session.flush()
                             move_mon_to_q(item.pic_name)
                         delete_message(call.message.chat.id, item.tele_msg)
-                bot.answer_callback_query(call.id, "Обработка завершена",show_alert=True)
+                answer_callback(call.id, "Обработка завершена",show_alert=True)
                 send_message(call.message.chat.id,"Последняя проверка: {}".format(time.strftime("%d %b %Y %H:%M:%S UTC+0")))
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
@@ -426,7 +434,7 @@ def main():
                 with session_scope() as session:
                     tag_item = session.query(Tag).filter_by(tag=tag,service=service).first()
                     tag_item.tag = alt_tag
-                bot.answer_callback_query(call.id,"Тег обновлён")
+                answer_callback(call.id,"Тег обновлён")
                 delete_message(call.message.chat.id,call.message.message_id)
             elif call.data.startswith("tag_del"):
                 tag = call.data[len("tag_del"):]
@@ -434,7 +442,7 @@ def main():
                 with session_scope() as session:
                     tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
                     session.delete(tag_item)
-                bot.answer_callback_query(call.id, "Тег удалён")
+                answer_callback(call.id, "Тег удалён")
                 delete_message(call.message.chat.id, call.message.message_id)
             elif call.data.startswith("tag_ren"):
                 tag = call.data[len("tag_ren"):]
@@ -541,7 +549,7 @@ def main():
                 if post.isdigit():
                     o_logger.debug("Found ID: {} Service: {}".format(post, service_db[SERVICE_DEFAULT]['name']))
                     queue_picture(message, SERVICE_DEFAULT, post)
-        elif util.contains(service_db, lambda x: service_db[x]['post_url'] in param[0]):
+        elif any(service_db_item['post_url'] in param[0] for service_db_item in service_db):
             o_logger.debug("Found service link")
             list_of_links = [x.strip() for x in filter(None, message.text.split())]
             for link in list_of_links:
