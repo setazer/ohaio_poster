@@ -30,7 +30,7 @@ TELEGRAM_PROXY = {}
 #    "http": "proxy.antizapret.prostovpn.org:3128",
 #    "https": "proxy.antizapret.prostovpn.org:3128"
 #}
-OWNER_ROOM_ID = '' # bot owner telegram id
+OWNER_ROOM_ID = 0 # bot owner telegram id
 
 # CherryPy config
 WEBHOOK_HOST = 'host.name'
