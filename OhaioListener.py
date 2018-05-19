@@ -51,9 +51,9 @@ def main():
     def access(access_number=0):
         def decorator(func):
             @wraps(func)
-            def wrapper(message):
+            def wrapper(message, *args):
                 if users.get(message.from_user.id, 0) >= access_number:
-                    func(message)
+                    func(message, *args)
                 else:
                     if isinstance(message,telebot.types.CallbackQuery):
                         answer_callback(message.id,"Not allowed!")
@@ -151,7 +151,7 @@ def main():
                 session.merge(pg_user)
         o_logger.debug("Users saved")
 
-    def say_to_seto(text):
+    def say_to_owner(text):
         return send_message(OWNER_ROOM_ID, str(text))
 
     def move_mon_to_q(filename):
@@ -170,13 +170,14 @@ def main():
     o_ch.setLevel(logging.ERROR)
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
+    telebot.apihelper.proxy = TELEGRAM_PROXY
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
     next_steps = {}
     paginators = {}
     o_logger.debug("Initializing bot")
     users = {}
-    curjob = 1
-    job_queue = 0
+    # curjob = 1
+    # job_queue = 0
     load_users()
     err_wait = [1, 5, 15, 30, 60, 300]
     error_msg=None
@@ -228,7 +229,7 @@ def main():
     @access(1)
     def stop(message):
         send_message(message.chat.id, "Регистрация отозвана.")
-        say_to_seto("Регистрация {} ({}) отозвана.".format(message.from_user.username, message.chat.id))
+        say_to_owner("Регистрация {} ({}) отозвана.".format(message.from_user.username, message.chat.id))
         users[message.chat.id] = 0
         save_users()
 
@@ -246,7 +247,7 @@ def main():
                 session.merge(ls_setting)
         nonlocal shutting_down
         o_logger.debug("Shutting down")
-        say_to_seto("Останавливаюсь...")
+        say_to_owner("Останавливаюсь...")
         shutting_down = True
         cherrypy.engine.exit()
 
@@ -320,16 +321,17 @@ def main():
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
     @access(1)
-    def delete_callback(data, call):
+    def delete_callback(call, data):
         with session_scope() as session:
-            queue_item = session.query(QueueItem).joinedload(Pic).filter_by(id=int(data)).first()
+            queue_item = session.query(QueueItem).options(joinedload(QueueItem.pic)).filter_by(id=int(data)).first()
+            paginators[(call.message.chat.id, call.message.message_id)].delete_data_item(int(data))
             if queue_item:
-                paginators[call.from_user.id].delete_data_item(
-                    (f"{queue_item.pic.service}:{queue_item.pic.post_id}", queue_item.id))
                 session.delete(queue_item)
+            else:
+                answer_callback(call.id, "Элемент не найден. Уже удалён?")
 
     def dead_paginator(call):
-        del paginators[call.from_user.id]
+        del paginators[(call.message.chat.id, call.message.message_id)]
 
     @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data)
     @access(1)
@@ -407,7 +409,7 @@ def main():
                             "Всего пикч: {}.".format(pic.post_id, service_db[pic.service]['name'],
                                                      session.query(QueueItem).count()))
                             if call.from_user.id != OWNER_ROOM_ID:
-                                say_to_seto("Новая пикча ID {} ({}) добавлена пользователем {}. "
+                                say_to_owner("Новая пикча ID {} ({}) добавлена пользователем {}. "
                                             "Всего пикч: {}.".format(pic.post_id, service_db[pic.service]['name'],
                                                                      call.from_user.username,
                                                                      session.query(QueueItem).count()))
@@ -486,14 +488,15 @@ def main():
     # @wait_for_job("Delete", False)
     def delete_queue(message):
         with session_scope() as session:
-            queue = [(f"{queue_item.pic.service}:{queue_item.pic.post_id}", queue_item.id) for queue_item in
+            queue = [(queue_item.id, f"{queue_item.pic.service}:{queue_item.pic.post_id}") for queue_item in
                      session.query(QueueItem).options(joinedload(QueueItem.pic)).order_by(QueueItem.id).all()]
         if queue:
             msg = send_message(message.chat.id, "Что удаляем?")
-            paginators[message.from_user.id] = InlinePaginator(msg, queue)
-            paginators[message.from_user.id].hook_telebot(bot, delete_callback, dead_paginator)
-            paginators[message.from_user.id].navigation_process = access(1)(
-                paginators[message.from_user.id].navigation_process)
+            paginators[(msg.chat.id, msg.message_id)] = InlinePaginator(msg, queue, 3)
+            paginators[(msg.chat.id, msg.message_id)].hook_telebot(bot, delete_callback, dead_paginator)
+
+            paginators[(msg.chat.id, msg.message_id)].navigation_process = access(1)(
+                paginators[(msg.chat.id, msg.message_id)].navigation_process)
 
         else:
             send_message(message.chat.id, "Очередь пуста.")
@@ -576,7 +579,8 @@ def main():
                 else:
                     send_message(message.chat.id, "Не распарсил: {}".format(post_number))
         else:
-            send_message(message.chat.id, "Не распарсил.")
+            pass
+            # send_message(message.chat.id, "Не распарсил.")
 
     def download(dl_msg, url, filename, preview=False):
         rep_subdomains = ["assets.", "assets2.", "simg3.", "simg4."]
@@ -654,7 +658,7 @@ def main():
                                   "Всего пикч: {}.".format(post_id, service_db[service]['name'],
                                                            session.query(QueueItem).count()))
                 if message.chat.id != OWNER_ROOM_ID:
-                    say_to_seto("Новая пикча ID {} ({}) добавлена пользователем {}. "
+                    say_to_owner("Новая пикча ID {} ({}) добавлена пользователем {}. "
                                 "Всего пикч: {}.".format(post_id, service_db[service]['name'],
                                                          message.from_user.username if message.from_user.id != bot.get_me().id else message.chat.username,
                                                          session.query(QueueItem).count()))
@@ -664,7 +668,7 @@ def main():
                                  service_db[service]['name'], post_id))
                 session.rollback()
 
-    telebot.apihelper.proxy = TELEGRAM_PROXY
+
     with session_scope() as session:
         for user, in session.query(User.user_id).filter(User.access>=1).all():
             send_message(user, "I'm alive!",disable_notification=True)
@@ -680,7 +684,7 @@ def main():
             o_logger.error(ex)
             util.log_error(ex)
             if not error_msg:
-                error_msg = say_to_seto("Бот упал, новая попытка ({}/5)".format(i + 1))
+                error_msg = say_to_owner("Бот упал, новая попытка ({}/5)".format(i + 1))
             else:
                 edit_message("Бот упал, новая попытка ({}/5)".format(i + 1),
                              error_msg.chat.id,
