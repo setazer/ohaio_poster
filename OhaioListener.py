@@ -357,12 +357,6 @@ def main():
             save_users()
             send_message(user, "Регистрация отклонена и заблокирована.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
-        elif call.data == "del_finish":
-            edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                         text="Удаление завершено.")
-            o_logger.debug("Delete job ended.")
-
-            # curjob += 1
         elif call.data.startswith("rec"):
             if call.data.startswith("rec_del"):
                 with session_scope() as session:
