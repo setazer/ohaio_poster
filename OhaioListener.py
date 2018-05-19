@@ -640,7 +640,7 @@ def main():
             o_logger.debug("Getting post info")
             (pic_name, direct, authors, characters, copyrights) = grabber.grab_booru(service, post_id)
             if not direct:
-                send_message(message.chat.id, "Скачивание пикчи не удалось.")
+                send_message(message.chat.id, "Скачивание пикчи не удалось. Забаненный пост?")
                 return
             dl_msg = send_message(message.chat.id, "Скачиваю пикчу")
             new_pic = Pic(service=service, post_id=post_id, authors=authors, chars=characters, copyright=copyrights)
