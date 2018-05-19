@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 import argparse
-
-import cherrypy
 import datetime as dt
 import logging
 import os
-import requests
-import telebot
 import time
 from functools import wraps
 
+import cherrypy
 import dateutil.relativedelta as rd
+import requests
+import telebot
 from PIL import Image
 from sqlalchemy.orm import joinedload
 
@@ -20,6 +19,7 @@ import util
 # Испорт рег. данных
 from creds import *
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
+from markup_templates import InlinePaginator
 from util import valid_artist_name
 
 
@@ -171,7 +171,8 @@ def main():
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
-    next_steps ={}
+    next_steps = {}
+    paginators = {}
     o_logger.debug("Initializing bot")
     users = {}
     curjob = 1
@@ -318,7 +319,19 @@ def main():
                             session.merge(pic_item)
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
-    @bot.callback_query_handler(func=lambda call: True)
+    @access(1)
+    def delete_callback(data, call):
+        with session_scope() as session:
+            queue_item = session.query(QueueItem).joinedload(Pic).filter_by(id=int(data)).first()
+            if queue_item:
+                paginators[call.from_user.id].delete_data_item(
+                    (f"{queue_item.pic.service}:{queue_item.pic.post_id}", queue_item.id))
+                session.delete(queue_item)
+
+    def dead_paginator(call):
+        del paginators[call.from_user.id]
+
+    @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data)
     @access(1)
     def callback_query(call):
         # nonlocal curjob
@@ -348,16 +361,6 @@ def main():
             o_logger.debug("Delete job ended.")
 
             # curjob += 1
-        elif call.data.startswith("del"):
-            idx = int(call.data[len('del'):])
-            with session_scope() as session:
-                pg_item = session.query(QueueItem).filter_by(id=idx).first()
-                os.remove(pg_item.pic_name)
-                session.delete(pg_item)
-                queue = [{'id':queue_item.id,'post_id':queue_item.pic.post_id,'service':queue_item.pic.service} for queue_item in session.query(QueueItem).all()]
-            edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                         text="Что удаляем?",
-                         reply_markup=markup_templates.gen_delete_markup(queue))
         elif call.data.startswith("rec"):
             if call.data.startswith("rec_del"):
                 with session_scope() as session:
@@ -482,15 +485,18 @@ def main():
     @access(2)
     # @wait_for_job("Delete", False)
     def delete_queue(message):
-        nonlocal curjob
         with session_scope() as session:
-            queue = [{'id':queue_item.id,'post_id':queue_item.pic.post_id,'service':queue_item.pic.service} for queue_item in session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
+            queue = [(f"{queue_item.pic.service}:{queue_item.pic.post_id}", queue_item.id) for queue_item in
+                     session.query(QueueItem).options(joinedload(QueueItem.pic)).order_by(QueueItem.id).all()]
         if queue:
-            send_message(message.chat.id, "Что удаляем?",
-                         reply_markup=markup_templates.gen_delete_markup(queue))
+            msg = send_message(message.chat.id, "Что удаляем?")
+            paginators[message.from_user.id] = InlinePaginator(msg, queue)
+            paginators[message.from_user.id].hook_telebot(bot, delete_callback, dead_paginator)
+            paginators[message.from_user.id].navigation_process = access(1)(
+                paginators[message.from_user.id].navigation_process)
+
         else:
             send_message(message.chat.id, "Очередь пуста.")
-            curjob += 1
 
     # @bot.message_handler(commands=['rebuild_history'])
     # @access(2)

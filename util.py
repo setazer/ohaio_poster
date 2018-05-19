@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
-import os, requests, time, traceback, vk, re, pytumblr
+import math
+import os
+import pytumblr
+import re
+import requests
+import time
+import traceback
+import vk
 
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from sqlalchemy import and_
 
 from creds import *
-from db_mng import User, Tag,Pic, QueueItem,MonitorItem, HistoryItem, Setting, session_scope
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-import math
+from db_mng import Tag, Pic, QueueItem, MonitorItem, Setting, session_scope
+
 
 def log_error(exception,args=[],kwargs={}):
     if not os.path.exists(ERROR_LOGS_DIR):
