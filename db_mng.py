@@ -179,31 +179,27 @@ def dump_db():
         settings = session.query(Setting).all()
         tags = session.query(Tag).all()
         for item in pics:
-            line = "{id}###{service}###{post_id}###{authors}###{chars}###{copyright}\n".format(
-                id=item.id, service=item.service, post_id=item.post_id, authors=item.authors, chars=item.chars, copyright=item.copyright)
+            line = f"{item.id}###{item.service}###{item.post_id}###{item.authors}###{item.chars}###{item.copyright}\n"
             db.write(line)
         db.write(sep_line)
         for item in h_items:
-            line = "{pic_id}###{wall_id}\n".format( pic_id=item.pic_id,
-                                                                wall_id=item.wall_id)
+            line = f"{item.pic_id}###{item.wall_id}\n"
             db.write(line)
         db.write(sep_line)
         for item in q_items:
-            line = "{pic_id}###{sender}###{pic_name}\n".format(
-                 sender=item.sender, pic_id=item.pic_id, pic_name=item.pic_name)
+            line = f"{item.pic_id}###{item.sender}###{item.pic_name}\n"
             db.write(line)
         db.write(sep_line)
         for item in users:
-            line = "{user_id}###{access}\n".format(user_id=item.user_id, access=item.access)
+            line = f"{item.user_id}###{item.access}\n"
             db.write(line)
         db.write(sep_line)
         for item in settings:
-            line = "{setting}###{value}\n".format(setting=item.setting, value=item.value)
+            line = f"{item.setting}###{item.value}\n"
             db.write(line)
         db.write(sep_line)
         for item in tags:
-            line = "{service}###{tag}###{last_check}###{missing_times}\n".format(service=item.service,tag=item.tag, last_check=item.last_check,
-                                                                     missing_times=item.missing_times)
+            line = f"{item.service}###{item.tag}###{item.last_check}###{item.missing_times}\n"
             db.write(line)
         print('Dump complete')
 

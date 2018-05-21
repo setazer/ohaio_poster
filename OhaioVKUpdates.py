@@ -44,43 +44,43 @@ def process_request(json_string):
         send_message(TELEGRAM_CHANNEL_VKUPDATES, "✉️ В сообществе новое личное сообщение.",reply_markup=messages_link())
         return 'ok'
     elif update["type"] == "photo_comment_new":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "🌄️ Новый комментарий к фотографии.\n\n{}".format(update['object']['text']),reply_markup=photo_link(update))
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"🌄️ Новый комментарий к фотографии.\n\n{update['object']['text']}",reply_markup=photo_link(update))
         return 'ok'
     elif update["type"] == "wall_repost":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "📢️ Новый репост\nhttps://vk.com/wall{}_{}".format(update['object']['owner_id'], update['object']['id']), reply_markup=post_link(update))
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"📢️ Новый репост\nhttps://vk.com/wall{update['object']['owner_id']}_{update['object']['id']}", reply_markup=post_link(update))
         return 'ok'
     elif update["type"] == "wall_reply_new":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "📃️ Новый комментарий на стене.\n\n{}".format(update['object']['text']), reply_markup=comment_link(update))
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"📃️ Новый комментарий на стене.\n\n{update['object']['text']}", reply_markup=comment_link(update))
         return 'ok'
     elif update["type"] == "wall_post_new":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "ℹ️ Новая запись на стене:\n\n{}".format(update['object']['text']), reply_markup=post_link(update))
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"ℹ️ Новая запись на стене:\n\n{update['object']['text']}", reply_markup=post_link(update))
         return 'ok'
     else:
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "❓ Необработанный апдейт:\n\n{}".format(update),
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"❓ Необработанный апдейт:\n\n{update}",
                      reply_markup=post_link(update))
         return 'ok'
 
 def comment_link(update):
-    sender_url = "https://vk.com/id{}".format(update['object']['from_id'])
-    post_url = "https://vk.com/wall{}_{}?reply={}".format(update['object']['post_owner_id'], update['object']['post_id'],update['object']['id'])
+    sender_url = f"https://vk.com/id{update['object']['from_id']}"
+    post_url = f"https://vk.com/wall{update['object']['post_owner_id']}_{update['object']['post_id']}?reply={update['object']['id']}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Отправитель", url=sender_url),InlineKeyboardButton(text="Перейти к комментарию", url=post_url))
     return link_markup
 
 def post_link(update):
-    post_url = "https://vk.com/wall{}_{}".format(update['object']['owner_id'], update['object']['id'])
+    post_url = f"https://vk.com/wall{update['object']['owner_id']}_{update['object']['id']}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=post_url))
     return link_markup
 
 def photo_link(update):
-    photo_url = "https://vk.com/photo{}_{}".format(update['object']['photo_owner_id'], update['object']['photo_id'])
+    photo_url = f"https://vk.com/photo{update['object']['photo_owner_id']}_{update['object']['photo_id']}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти к фотографии", url=photo_url))
     return link_markup
 
 def messages_link():
-    url = "https://vk.com/gim" + VK_GROUP_ID
+    url = f"https://vk.com/gim{VK_GROUP_ID}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти в сообщения сообщества", url=url))
     return link_markup

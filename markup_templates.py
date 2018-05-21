@@ -11,14 +11,14 @@ from creds import VK_GROUP_ID, service_db
 
 def gen_progress(progress):
     prog_markup = InlineKeyboardMarkup()
-    prog_markup.add(InlineKeyboardButton(text="{0:.2f}%".format(progress), callback_data='progress'))
+    prog_markup.add(InlineKeyboardButton(text=f"{progress:.2f}%", callback_data='progress'))
     return prog_markup
 
 
 def gen_post_link(wall_id):
     if wall_id==-1:
         return None
-    link = "https://vk.com/wall-{}_{}".format(VK_GROUP_ID, wall_id)
+    link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=link))
     return link_markup
@@ -26,9 +26,9 @@ def gen_post_link(wall_id):
 def gen_user_markup(user):
     user_markup = InlineKeyboardMarkup()
     user_markup.row_width = 2
-    user_markup.add(InlineKeyboardButton("Да", callback_data="user_allow{}".format(user)),
-                    InlineKeyboardButton("Нет", callback_data="user_deny{}".format(user)))
-    user_markup.row(InlineKeyboardButton("Забанить", callback_data="user_block{}".format(user)))
+    user_markup.add(InlineKeyboardButton("Да", callback_data=f"user_allow{user}"),
+                    InlineKeyboardButton("Нет", callback_data=f"user_deny{user}"))
+    user_markup.row(InlineKeyboardButton("Забанить", callback_data=f"user_block{user}"))
     return user_markup
 
 
@@ -44,8 +44,8 @@ def gen_status_markup(*args):
 def gen_del_tag_markup(tag):
     del_tag_markup = InlineKeyboardMarkup()
     del_tag_markup.add(
-        InlineKeyboardButton(text="Попытаться исправить", callback_data="rec_fix{}".format(tag)),
-        InlineKeyboardButton(text="Загуглить", url=r"https://www.google.ru/search?q=gelbooru {}".format(tag)))
+        InlineKeyboardButton(text="Попытаться исправить", callback_data=f"rec_fix{tag}"),
+        InlineKeyboardButton(text="Загуглить", url=rf"https://www.google.ru/search?q=gelbooru {tag}"))
     return del_tag_markup
 
 
@@ -53,10 +53,10 @@ def gen_rec_new_markup(id,post_id,checked=False):
     rec_new_markup = InlineKeyboardMarkup()
     to_del = "❎" if not checked else "❌"
     rec_new_markup.row_width = 2
-    rec_new_markup.add(InlineKeyboardButton(text="{} Удалить".format(to_del), callback_data="rec_del{} {}".format(id,random.randint(1,1000000))),
-                       InlineKeyboardButton(text="▶️ Обработать", callback_data="rec_finish{}".format(id)),
+    rec_new_markup.add(InlineKeyboardButton(text=f"{to_del} Удалить", callback_data=f"rec_del{id} {random.randint(1,1000000)}"),
+                       InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
                        InlineKeyboardButton(text="Оригинал",
-                                            url=r"http://danbooru.donmai.us/posts/{}".format(post_id)))
+                                            url=rf"http://danbooru.donmai.us/posts/{post_id}"))
     return rec_new_markup
 
 def gen_tag_fix_markup(tag,suggestions):
@@ -74,10 +74,10 @@ def gen_tag_fix_markup(tag,suggestions):
     return rec_new_markup
 
 def gen_channel_inline(new_post,wall_id):
-    text = "{} {}".format(service_db[new_post['service']]['name'], new_post['post_id'])
-    url = "http://{}{}".format(service_db[new_post['service']]['post_url'], new_post['post_id'])
+    text = f"{service_db[new_post['service']]['name']} {new_post['post_id']}"
+    url = f"http://{service_db[new_post['service']]['post_url']}{new_post['post_id']}"
     channel_markup = InlineKeyboardMarkup()
-    vk_link = "https://vk.com/wall-{}_{}".format(VK_GROUP_ID, wall_id)
+    vk_link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
     buttons = []
     buttons.append(InlineKeyboardButton(text=text, url=url))
     if wall_id != -1:
@@ -150,7 +150,7 @@ class InlinePaginator():
         if self.current_page > 1:
             nav_buttons.append(InlineKeyboardButton(text="⏪" + emojize_number(1), callback_data='pag_switch1'))
             nav_buttons.append(InlineKeyboardButton(text="◀️" + emojize_number(self.current_page - 1),
-                                                    callback_data='pag_switch{}'.format(self.current_page - 1)))
+                                                    callback_data=f'pag_switch{self.current_page - 1}'))
         else:
             nav_buttons += [InlineKeyboardButton(text="⏺", callback_data='pag_cur')] * 2
 
@@ -158,9 +158,9 @@ class InlinePaginator():
                                                 callback_data=f'pag_cur{randint(0,1000000000)}'))
         if self.current_page < self.max_pages:
             nav_buttons.append(InlineKeyboardButton(text="▶️" + emojize_number(self.current_page + 1),
-                                                    callback_data='pag_switch{}'.format(self.current_page + 1)))
+                                                    callback_data=f'pag_switch{self.current_page + 1}'))
             nav_buttons.append(InlineKeyboardButton(text="️⏩" + emojize_number(self.max_pages),
-                                                    callback_data='pag_switch{}'.format(self.max_pages)))
+                                                    callback_data=f'pag_switch{self.max_pages}'))
         else:
             nav_buttons += [InlineKeyboardButton(text="⏺", callback_data='pag_cur')] * 2
         markup.row(*nav_buttons)

@@ -62,7 +62,7 @@ def download(sample_url, file_url, filename):
             file_url = "https://" + service_db['dan']['base_url'] + file_url
     else:
         proxies = {}
-    headers = {'user-agent': 'OhaioPoster/{0}'.format('0.0.0.1'),
+    headers = {'user-agent': 'OhaioPoster',
                    'content-type': 'application/json; charset=utf-8'}
     if sample_url==file_url:
         try:
@@ -163,7 +163,7 @@ def main(log):
                 tag.missing_times += 1
                 if tag.missing_times > 4:
                     send_message(srvc_msg.chat.id,
-                                     "У тега {} нет постов уже после {} проверок".format(tag.tag, tag.missing_times),
+                                     f"У тега {tag.tag} нет постов уже после {tag.missing_times} проверок",
                                      reply_markup=markup_templates.gen_del_tag_markup(tag.tag))
                 continue
             else:
@@ -191,30 +191,31 @@ def main(log):
                         pic = {'item':pic_item,'new':False}
                     else:
                         pic = {'item':Pic(service=service,post_id=post_id,
-                                   authors=' '.join(['#{}'.format(x) for x in post.get('tag_string_artist').split()]),
-                                   chars = ' '.join(['#{}'.format(x[:len(x) if not '_(' in x else x.find('_(')]) for x in
-                          post.get('tag_string_character').split()]),copyright=' '.join(['#{}'.format(x).replace('_(series)', '') for x in
-                                                        post.get('tag_string_copyright').split()])),'new':True}
+                                   authors=' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
+                                   chars = ' '.join({f"#{x.split('_(')[0]}" for x in
+                          post.get('tag_string_character').split()}),copyright=' '.join({f'#{x}'.replace('_(series)', '') for x in
+                                                        post.get('tag_string_copyright').split()})),'new':True}
                     new_posts[post_id] = {'tag': tag.tag, 'sample_url': post.get('file_url'), 'file_url': post.get('large_file_url'),
-                                          'dimensions': '{}x{}'.format(post['image_height'], post['image_width'])
+                                          'dimensions': f"{post['image_height']}x{post['image_width']}"
                         ,'pic':pic}
             else:
                 tag.last_check = int(posts[0]['id'])
             if (n % 5) == 0:
                 edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                                               reply_markup=markup_templates.gen_status_markup(
-                                                  "{} [{}/{}]".format(tag.tag,n, tags_total),
-                                                  "Новых постов: {}".format(len(new_posts))))
+                                                  f"{tag.tag} [{n}/{tags_total}]",
+                                                  f"Новых постов: {len(new_posts)}"))
         edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
         srt_new_posts = sorted(new_posts)
         for (n, post_id) in enumerate(srt_new_posts, 1):
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                                           reply_markup=markup_templates.gen_status_markup(
-                                              "Новых постов: {}".format(len(new_posts)),
-                                              "Обработка поста: {}/{}".format(n, len(srt_new_posts))))
+                                              f"Новых постов: {len(new_posts)}",
+                                              f"Обработка поста: {n}/{len(srt_new_posts)}"))
             new_post = new_posts[post_id]
             if (new_post['file_url'] or new_post['sample_url']):
-                pic_name = '{}.{}{}'.format(service, post_id, os.path.splitext(new_post['file_url'])[1])
+                _, pic_ext = os.path.splitext(new_post['file_url'])
+                pic_name = f"{service}.{post_id}{pic_ext}"
             else:
                 pic_name = ''
             if download(new_post['sample_url'],new_post['file_url'], pic_name):
@@ -232,7 +233,7 @@ def main(log):
                     session.refresh(pic)
                 with open(MONITOR_FOLDER + new_post['pic_name'], 'rb') as picture:
                     mon_msg = send_photo(TELEGRAM_CHANNEL_MON, picture,
-                                   '#{} ID: {}\n{}'.format(new_post['tag'], post_id, new_post['dimensions']),
+                                   f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}'",
                                    reply_markup=markup_templates.gen_rec_new_markup(pic.id,pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 session.merge(pic)

@@ -41,20 +41,21 @@ def grab_booru(service, post_id,pic_name=None):
         service_payload = service_db[service]['payload']
         proxies = TELEGRAM_PROXY
         with requests.Session() as ses:
-            ses.headers = {'user-agent': 'OhaioPoster/{0}'.format('0.0.0.1'),
+
+            ses.headers = {'user-agent': 'OhaioPoster',
                            'content-type': 'application/json; charset=utf-8'}
             ses.post(service_login, data=service_payload)
             response = ses.get(service_api.format(post_id), proxies=proxies).json()
             if response['is_banned']:
                 return ('', '', [], [], [])
-            authors = ' '.join(['#{}'.format(x) for x in response['tag_string_artist'].split()])
-            copyrights = ' '.join(['#{}'.format(x).replace('_(series)', '') for x in
-                          response['tag_string_copyright'].split()])
-            characters = ' '.join(['#{}'.format(x[:len(x) if not '_(' in x else x.find('_(')]) for x in
-                          response['tag_string_character'].split()])
+            authors = ' '.join({f'#{x}' for x in response['tag_string_artist'].split()})
+            copyrights = ' '.join({f'#{x}'.replace('_(series)', '') for x in
+                          response['tag_string_copyright'].split()})
+            characters = ' '.join({f"#{x.split('_(')[0]}" for x in
+                          response['tag_string_character'].split()})
             direct = 'http://' + service_db[service]['base_url'] + response['large_file_url'] if response['large_file_url'].startswith('/') else response['large_file_url'].replace('https','http')
-            pic_ext = os.path.splitext(response['large_file_url'])[1]
-            pic_name = service + '.' + post_id + pic_ext
+            _, pic_ext = os.path.splitext(response['large_file_url'])
+            pic_name = f"{service}.{post_id}{pic_ext}"
     else:
         pic_name = ''
         direct = ''

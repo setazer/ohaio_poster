@@ -63,7 +63,7 @@ def main(log):
         tel_msg += "Копирайт: " + new_post['copyright']
     if not msg:
         msg = "#ohaioposter"
-    log.debug('Posting {}:{} to VK'.format(service_db[new_post['service']]['name'], new_post["post_id"]))
+    log.debug(f"Posting {service_db[new_post['service']]['name']}:{new_post['post_id']} to VK")
     with session_scope() as session:
         wall_id = session.query(HistoryItem).join(Pic).filter_by(service=new_post['service'],
                                                                  post_id=new_post['post_id']).first()
@@ -102,10 +102,10 @@ def main(log):
         util.log_error(ex)
     os.remove(QUEUE_FOLDER+new_post['pic_name'])
     bot.send_message(new_post['sender'],
-                     "ID {} ({}) опубликован.".format(new_post['post_id'], service_db[new_post['service']]['name']))
+                     f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     if new_post['sender'] != OWNER_ROOM_ID:
         bot.send_message(OWNER_ROOM_ID,
-                         "ID {} ({}) опубликован.".format(new_post['post_id'], service_db[new_post['service']]['name']))
+                         f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     log.debug('Posting finished')
     util.update_header()
 

@@ -18,14 +18,14 @@ from db_mng import Tag, Pic, QueueItem, MonitorItem, Setting, session_scope
 def log_error(exception,args=[],kwargs={}):
     if not os.path.exists(ERROR_LOGS_DIR):
         os.makedirs(ERROR_LOGS_DIR)
-    with open('{}{}.txt'.format(ERROR_LOGS_DIR,time.strftime("%Y%m%d_%H%M%S")),'a') as err_file:
+    with open(ERROR_LOGS_DIR+time.strftime('%Y%m%d_%H%M%S')+".txt",'a') as err_file:
         if args:
             err_file.write("ARGS: " + str(args) + "\n")
         if kwargs:
             err_file.write("KEYWORD ARGS:\n")
             for key in kwargs:
                 err_file.write(str(key) + " : " + str(kwargs[key]) + "\n")
-        err_file.write('{}\n\n'.format(exception).upper())
+        err_file.write(f'{exception}\n\n'.upper())
         traceback.print_exc(file=err_file)
 
 def post_picture(new_post, msg='#ohaioposter'):
@@ -124,7 +124,7 @@ def get_current_album():
 
             next_number = int(latest_album['title'].replace("Feed #", "")) + 1
             prev_album = session.query(Setting).filter_by(setting='previous_album').first()
-            new_album = api.photos.createAlbum(title="Feed #{:03}".format(next_number), group_id=VK_GROUP_ID,
+            new_album = api.photos.createAlbum(title=f"Feed #{next_number:03}", group_id=VK_GROUP_ID,
                                                upload_by_admins_only=1, comments_disabled=1)
             prev_album.value = cur_album.value
             cur_album.value=str(new_album['id'])
@@ -155,7 +155,7 @@ def get_last_posts_ids(service):
             try:
                 time.sleep(0.05)
                 post = response.json()[0]['id']
-                print("{}/{}".format(i,total),tag.tag)
+                print("{i}/{total}",tag.tag)
             except Exception:
                 session.delete(tag)
                 continue
@@ -174,7 +174,7 @@ def update_header():
     img = Image.open('header.png')
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype("VISITOR_RUS.TTF", 10)
-    draw.text((3, img.height - 12), "Пикч в очереди: {}".format(queue_num), (255, 255, 255), font=font)
+    draw.text((3, img.height - 12), f"Пикч в очереди: {queue_num}", (255, 255, 255), font=font)
     img.save('cur_header.png')
     with open('cur_header.png', 'rb') as pic:
         upload_url = api.photos.getOwnerCoverPhotoUploadServer(group_id=VK_GROUP_ID, crop_x2=795, crop_y2=200)['upload_url']
