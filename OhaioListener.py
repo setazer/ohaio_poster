@@ -141,7 +141,7 @@ def main():
         with session_scope() as session:
             users = {user: access for user, access in session.query(User.user_id, User.access).all()}
         if not users:
-            users = {OWNER_ROOM_ID: 2}
+            users = {OWNER_ROOM_ID: 100}
         o_logger.debug("Loaded users: " + str(users))
 
     def save_users():
@@ -478,7 +478,7 @@ def main():
 
 
     @bot.message_handler(commands=['delete'])
-    @access(2)
+    @access(1)
     # @wait_for_job("Delete", False)
     def delete_queue(message):
         with session_scope() as session:
