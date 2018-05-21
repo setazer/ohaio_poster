@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-import requests, os
+import os
+import requests
 from bs4 import BeautifulSoup
+
 from creds import service_db, TELEGRAM_PROXY
 
 
@@ -43,6 +45,8 @@ def grab_booru(service, post_id,pic_name=None):
                            'content-type': 'application/json; charset=utf-8'}
             ses.post(service_login, data=service_payload)
             response = ses.get(service_api.format(post_id), proxies=proxies).json()
+            if response['is_banned']:
+                return ('', '', [], [], [])
             authors = ' '.join(['#{}'.format(x) for x in response['tag_string_artist'].split()])
             copyrights = ' '.join(['#{}'.format(x).replace('_(series)', '') for x in
                           response['tag_string_copyright'].split()])
