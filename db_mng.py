@@ -47,7 +47,7 @@ class Pic(Base):
     __table_args__ = (UniqueConstraint('service', 'post_id', name='pics_service_post_id_key'),)
 
     def __repr__(self):
-        return f"<Pic(id='{self.id}',service='{self.service}', post_id='{self.post_id}', authors='{self.authors}', chars='{self.chars}', copyright='{self.copyright}')>"
+        return f"<Pic(id='{self.id}',service='{self.service}', post_id='{self.post_id}', file_id='{self.file_id}', authors='{self.authors}', chars='{self.chars}', copyright='{self.copyright}')>"
 
 
 class Setting(Base):
@@ -86,7 +86,7 @@ class MonitorItem(Base):
     to_del = Column(Boolean)
 
     def __repr__(self):
-        return f"<MonitorItem(id='{self.id}', pic_id='{self.pic_id}', tele_msg='{self.tele_msg}', tele_file_id='{self.tele_file_id}', pic_name='{self.pic_name}', to_del='{self.to_del}')>"
+        return f"<MonitorItem(id='{self.id}', pic_id='{self.pic_id}', tele_msg='{self.tele_msg}', pic_name='{self.pic_name}', to_del='{self.to_del}')>"
 
 class HistoryItem(Base):
     __tablename__ = 'history'
