@@ -599,7 +599,7 @@ def main():
                 q_pic.queue_item = QueueItem(sender=message.chat.id, pic_name=post_in_monitor.pic_name)
                 delete_message(TELEGRAM_CHANNEL_MON, post_in_monitor.tele_msg)
                 session.delete(post_in_monitor)
-                session.flush()
+                session.merge(q_pic)
                 send_message(chat_id=message.chat.id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
                                   f"Всего пикч: {pics_total+1}.")
