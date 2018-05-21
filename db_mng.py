@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-import shelve
-from creds import *
-from sqlalchemy import create_engine
+from contextlib import contextmanager
+
 from sqlalchemy import Column, Integer, String, Boolean, Sequence, UniqueConstraint, PrimaryKeyConstraint, ForeignKey
+from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from contextlib import contextmanager
-import logging
+
+from creds import *
 
 Base = declarative_base()
 
@@ -37,6 +37,7 @@ class Pic(Base):
     id = Column(Integer, Sequence('pics_id_seq'), primary_key=True)
     service = Column(String(15), nullable=False)
     post_id = Column(String(15), nullable=False)
+    file_id = Column(String(80))
     authors = Column(String(300))
     chars = Column(String(300))
     copyright = Column(String(300))
@@ -81,7 +82,6 @@ class MonitorItem(Base):
     pic_id = Column(Integer, ForeignKey('pics.id'))
     pic = relationship("Pic", back_populates="monitor_item")
     tele_msg = Column(Integer, nullable=False)
-    tele_file_id = Column(String(80))
     pic_name = Column(String(30))
     to_del = Column(Boolean)
 

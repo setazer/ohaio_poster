@@ -198,7 +198,7 @@ def main():
                          f"Повторная регистрация: {message.from_user.username} ({message.chat.id})",
                          reply_markup=markup_templates.gen_user_markup(message.chat.id))
 
-    @bot.message_handler(commands=['stop'])
+    @bot.message_handler(commands=['stop'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def stop(message):
         send_message(message.chat.id, "Регистрация отозвана.")
@@ -206,7 +206,7 @@ def main():
         users[message.chat.id] = 0
         save_users()
 
-    @bot.message_handler(commands=['shutdown'])
+    @bot.message_handler(commands=['shutdown'], func=lambda m: bool(users.get(m.chat.id)))
     @access(2)
     def shutdown(message):
         with session_scope() as session:
@@ -224,7 +224,7 @@ def main():
         shutting_down = True
         cherrypy.engine.exit()
 
-    @bot.message_handler(commands=['uptime'])
+    @bot.message_handler(commands=['uptime'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def uptime(message):
         nonlocal up_time
@@ -236,7 +236,7 @@ def main():
         diff = ' '.join(human_readable(rd.relativedelta(cur_time, up_time)))
         send_message(message.chat.id, "Bot is running for: " + diff)
 
-    @bot.message_handler(commands=['remonitor'])
+    @bot.message_handler(commands=['remonitor'], func=lambda m: bool(users.get(m.chat.id)))
     @access(2)
     def refill_monitor(message):
         o_logger.debug("refill started")
@@ -290,7 +290,6 @@ def main():
                             mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo=pic,caption=f'ID: {post_id}\n{width}x{height}',
                                        reply_markup=markup_templates.gen_rec_new_markup(pic_item.id,post_id))
                             pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg = mon_msg.message_id)
-                            session.merge(pic_item)
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
     @access(1)
@@ -306,7 +305,7 @@ def main():
     def dead_paginator(call):
         del paginators[(call.message.chat.id, call.message.message_id)]
 
-    @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data)
+    @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data and bool(users.get(call.from_user.id)))
     @access(1)
     def callback_query(call):
         # nonlocal curjob
@@ -340,7 +339,6 @@ def main():
                     checked = not mon_item.to_del
                     post_id = mon_item.pic.post_id
                     mon_item.to_del = checked
-                    session.merge(mon_item)
                 edit_markup(call.message.chat.id, call.message.message_id,
                             reply_markup=markup_templates.gen_rec_new_markup(id,post_id, checked))
 
@@ -352,39 +350,28 @@ def main():
                 with session_scope() as session:
                     mon_id = session.query(MonitorItem).filter_by(pic_id=id).first().id
                     mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(MonitorItem.id<=mon_id).all()
-                    pics_total = session.query(QueueItem).count()
+                    pre_add_count = session.query(QueueItem).count()
                     o_logger.debug(f"{call.from_user.username} finished recommendations check")
                     for item in mon_items:
                         if item.to_del:
                             if os.path.exists(MONITOR_FOLDER+item.pic_name):
                                 os.remove(MONITOR_FOLDER+item.pic_name)
-
+                            delete_message(call.message.chat.id, item.tele_msg)
                             session.delete(item.pic)
-                        else:
-                            pic = item.pic
-                            if pic.queue_item:
-                                send_message(call.from_user.id,
-                                             f"ID {pic.post_id} ({service_db[pic.service]['name']}) уже в очереди!")
-                                continue
-                            if pic.history_item:
-                                send_message(call.from_user.id,
-                                             f"ID {pic.post_id} ({service_db[pic.service]['name']}) уже было!")
-                                continue
-                            pic.queue_item = QueueItem(sender=call.from_user.id,pic_name=item.pic_name)
-
-                            send_message(chat_id = call.from_user.id,
-                                         text = f"Пикча ID {pic.post_id} ({service_db[pic.service]['name']}) сохранена."
-                                                f" Всего пикч: {pics_total}.")
-                            if call.from_user.id != OWNER_ROOM_ID:
-                                say_to_owner(f"Новая пикча ID {pic.post_id} ({service_db[pic.service]['name']})"
-                                             f" добавлена пользователем {call.from_user.username}. "
-                                             f"Всего пикч: {pics_total}.")
-                            session.delete(item)
-                            session.merge(pic)
                             session.flush()
+                        else:
+                            item.pic.queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
+                            delete_message(TELEGRAM_CHANNEL_MON, item.tele_msg)
                             move_mon_to_q(item.pic_name)
-                        delete_message(call.message.chat.id, item.tele_msg)
-                answer_callback(call.id, "Обработка завершена",show_alert=True)
+                            session.delete(item)
+                            send_message(chat_id=call.from_user.id,
+                                         text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
+                    post_add_count = session.query(QueueItem).count()
+                    send_message(chat_id=call.from_user.id,
+                                 text=f"Обработка завершена. Добавлено {post_add_count-pre_add_count} пикч.")
+                    if not call.from_user.id == OWNER_ROOM_ID:
+                        say_to_owner(
+                            f"Обработка монитора пользователем {call.from_use.username} завершена. Добавлено {post_add_count-pre_add_count} пикч.")
                 send_message(call.message.chat.id,f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
@@ -438,7 +425,7 @@ def main():
         else:
             send_message(message.chat.id,"Бот почему-то ожидал ответа на переименование тега, но данных об заменяемом теге нет.")
 
-    @bot.message_handler(commands=['queue'])
+    @bot.message_handler(commands=['queue'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def check_queue(message):
         bot.send_chat_action(message.chat.id, 'upload_photo')
@@ -448,8 +435,7 @@ def main():
         with open(QUEUE_GEN_FILE,'rb') as doc:
             bot.send_document(message.chat.id,doc,caption="Очередь")
 
-
-    @bot.message_handler(commands=['delete'])
+    @bot.message_handler(commands=['delete'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     # @wait_for_job("Delete", False)
     def delete_queue(message):
@@ -477,7 +463,7 @@ def main():
     #     util.refill_history()
     #     send_message(message.chat.id, "История перезаполнена.")
 
-    @bot.message_handler(commands=['add_tag'])
+    @bot.message_handler(commands=['add_tag'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def add_recommendation_tag(message):
         try:
@@ -499,7 +485,7 @@ def main():
             else:
                 send_message(message.chat.id, text="Тег уже есть")
 
-    @bot.message_handler()
+    @bot.message_handler(func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def got_new_message(message):
         o_logger.debug(f"Got new message: '{message.text}'")
@@ -514,7 +500,7 @@ def main():
             for post in posts:
                 if post.isdigit():
                     o_logger.debug(f"Found ID: {post} Service: {service_db[service]['name']}")
-                    queue_picture(message, service, post)
+                    queue_picture(message.from_user, service, post)
                 else:
                     send_message(message.chat.id, f"Не распарсил: {post}")
         elif param[0].isdigit():
@@ -523,7 +509,7 @@ def main():
             for post in posts:
                 if post.isdigit():
                     o_logger.debug(f"Found ID: {post} Service: {service_db[SERVICE_DEFAULT]['name']}")
-                    queue_picture(message, SERVICE_DEFAULT, post)
+                    queue_picture(message.from_user, SERVICE_DEFAULT, post)
         elif any(service_db_item['post_url'] in param[0] for service_db_item in service_db.values()):
             o_logger.debug("Found service link")
             list_of_links = [x.strip() for x in filter(None, message.text.split())]
@@ -540,11 +526,11 @@ def main():
                 if post_number.isdigit():
                     o_logger.debug(
                         f"Found ID: {post_number} Service: {service_db[service]['name']}")
-                    queue_picture(message, service, post_number)
+                    queue_picture(message.from_user, service, post_number)
                 else:
                     send_message(message.chat.id, f"Не распарсил: {post_number}")
-        # else:
-        #     send_message(message.chat.id, "Не распарсил.")
+        else:
+            send_message(message.chat.id, "Не распарсил.")
 
     def download(dl_msg, url, filename, preview=False):
         rep_subdomains = ["assets.", "assets2.", "simg3.", "simg4."]
@@ -578,51 +564,45 @@ def main():
         return True
 
     # @wait_for_job("Post")
-    def queue_picture(message, service, post_id):
+    def queue_picture(sender, service, post_id):
         with session_scope() as session:
-            post_in_queue = session.query(QueueItem).join(Pic).filter_by(service=service, post_id=post_id).first()
-            post_in_history = session.query(HistoryItem).join(Pic).filter_by(service=service, post_id=post_id).first()
-            post_in_monitor = session.query(MonitorItem).join(Pic).filter_by(service=service, post_id=post_id).first()
-            pics_total=session.query(QueueItem).count()
-            if post_in_queue:
-                send_message(message.chat.id,
-                             f"ID {post_id} ({service_db[service]['name']}) уже в очереди!")
-                return
-
-            if post_in_history:
-                send_message(message.chat.id, f"ID {post_id} ({service_db[service]['name']}) уже было!",
-                             reply_markup=markup_templates.gen_post_link(post_in_history.wall_id))
-                return
-
-            if post_in_monitor:
-                q_pic = post_in_monitor.pic
-                q_pic.queue_item = QueueItem(sender=message.chat.id, pic_name=post_in_monitor.pic_name)
-                delete_message(TELEGRAM_CHANNEL_MON, post_in_monitor.tele_msg)
-                session.delete(post_in_monitor)
-                session.flush()
-                send_message(chat_id=message.chat.id,
-                             text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
-                                  f"Всего пикч: {pics_total+1}.")
-                move_mon_to_q(post_in_monitor.pic_name)
-                return
-
-
+            pics_total = session.query(QueueItem).count()
+            pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
+                service=service, post_id=post_id).first()
+            if pic:
+                new_pic = pic
+                if pic.queue_item:
+                    send_message(sender.id, f"ID {post_id} ({service_db[service]['name']}) уже в очереди!")
+                    return
+                if pic.history_item:
+                    send_message(sender.id, f"ID {post_id} ({service_db[service]['name']}) уже было!",
+                                 reply_markup=markup_templates.gen_post_link(pic.history_item.wall_id))
+                    return
+                if pic.monitor_item:
+                    pic.queue_item = QueueItem(sender=sender.id, pic_name=pic.monitor_item.pic_name)
+                    delete_message(TELEGRAM_CHANNEL_MON, pic.monitor_item.tele_msg)
+                    move_mon_to_q(pic.monitor_item.pic_name)
+                    session.delete(pic.monitor_item)
+                    send_message(chat_id=sender.id,
+                                 text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
+                                      f"Всего пикч: {pics_total+1}.")
+                    return
             o_logger.debug("Getting post info")
             (pic_name, direct, authors, characters, copyrights) = grabber.grab_booru(service, post_id)
             if not direct:
-                send_message(message.chat.id, "Скачивание пикчи не удалось. Забаненный пост?")
+                send_message(sender.id, "Скачивание пикчи не удалось. Забаненный пост?")
                 return
-            dl_msg = send_message(message.chat.id, "Скачиваю пикчу")
             new_pic = Pic(service=service, post_id=post_id, authors=authors, chars=characters, copyright=copyrights)
-            new_pic.queue_item = QueueItem(sender=message.chat.id, pic_name=pic_name)
-            session.merge(new_pic)
+            new_pic.queue_item = QueueItem(sender=sender.id, pic_name=pic_name)
+            dl_msg = send_message(sender.id, "Скачиваю пикчу")
             if download(dl_msg, direct, pic_name):
+                session.add(new_pic)
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
                                   f"Всего пикч: {pics_total+1}.")
-                if message.chat.id != OWNER_ROOM_ID:
-                    sender = message.from_user.username if message.from_user.id != bot.get_me().id else message.chat.username
-                    say_to_owner(f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender}. "
+                if sender.id != OWNER_ROOM_ID:
+                    say_to_owner(
+                        f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}. "
                                  f"Всего пикч: {pics_total+1}.")
             else:
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
