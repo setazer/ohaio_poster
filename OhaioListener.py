@@ -371,7 +371,7 @@ def main():
                                  text=f"Обработка завершена. Добавлено {post_add_count-pre_add_count} пикч.")
                     if not call.from_user.id == OWNER_ROOM_ID:
                         say_to_owner(
-                            f"Обработка монитора пользователем {call.from_use.username} завершена. Добавлено {post_add_count-pre_add_count} пикч.")
+                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {post_add_count-pre_add_count} пикч.")
                 send_message(call.message.chat.id,f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
