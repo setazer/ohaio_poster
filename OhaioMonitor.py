@@ -183,7 +183,7 @@ def main(log):
                         skip = True
                         break
                 if skip: continue
-                if (service, str(post_id)) in qnh or '.webm' in post.get('file_url','') or '.webm' in post.get('large_file_url',''):
+                if (service, str(post_id)) in qnh or 'webm' in post.get('file_ext',''):
                     continue
                 if post_id > last_id:
                     pic_item = session.query(Pic).filter_by(service=service,post_id=str(post_id)).first()
@@ -236,6 +236,7 @@ def main(log):
                                    f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}'",
                                    reply_markup=markup_templates.gen_rec_new_markup(pic.id,pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
+                pic.file_id = mon_msg.photo[0].file_id
                 session.merge(pic)
         bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
