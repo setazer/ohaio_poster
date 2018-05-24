@@ -233,7 +233,7 @@ def main(log):
                     session.refresh(pic)
                 with open(MONITOR_FOLDER + new_post['pic_name'], 'rb') as picture:
                     mon_msg = send_photo(TELEGRAM_CHANNEL_MON, picture,
-                                   f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}'",
+                                   f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                    reply_markup=markup_templates.gen_rec_new_markup(pic.id,pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id

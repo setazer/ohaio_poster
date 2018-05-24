@@ -17,7 +17,7 @@ def check_queue():
         posts = session.query(QueueItem).order_by(QueueItem.id).all()
         new_post = None
         for post in posts:
-            if os.path.exists(QUEUE_FOLDER+post.pic_name):
+            if os.path.exists(QUEUE_FOLDER+post.pic_name) and not post.pic.history_item:
                 new_post = {'service': post.pic.service, 'post_id': post.pic.post_id, 'authors': post.pic.authors,
                             'chars': post.pic.chars, 'copyright': post.pic.copyright, 'pic_name': post.pic_name,
                             'sender': post.sender}
@@ -65,36 +65,40 @@ def main(log):
         msg = "#ohaioposter"
     log.debug(f"Posting {service_db[new_post['service']]['name']}:{new_post['post_id']} to VK")
     with session_scope() as session:
-        wall_id = session.query(HistoryItem).join(Pic).filter_by(service=new_post['service'],
+        pic = session.query(Pic).filter_by(service=new_post['service'],
                                                                  post_id=new_post['post_id']).first()
         queue_len = session.query(QueueItem).count()
-    if not wall_id:
-        try:
-            vk_to_post = False
-            for (time_low, time_high) in vk_posting_times:
-                minute = datetime.datetime.now().minute
-                if (time_low <= minute <= time_high) or args.forced_post:
-                    wall_id = util.post_picture(new_post, msg)
-                    vk_to_post = True
-                    break
-            if not vk_to_post and queue_len > 144:
+        file_id=pic.file_id
+        minute = datetime.datetime.now().minute
+        if args.forced_post or any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times):
+            try:
+                wall_id = util.post_picture(new_post, msg)
+            except Exception as ex:
+                o_logger.error(ex)
+                util.log_error(ex)
                 wall_id = -1
-            if not wall_id:
-                return
-        except Exception as ex:
-            o_logger.error(ex)
-            util.log_error(ex)
+        elif queue_len > 144:
             wall_id = -1
+        else:
+            return
     log.debug('Adding to history')
     add_to_history(new_post, wall_id)
     log.debug('Posting to Telegram')
-    with open(QUEUE_FOLDER + new_post['pic_name'], 'rb') as pic:
+    if file_id:
         try:
-            bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=pic, caption=tel_msg,
+            bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=file_id, caption=tel_msg,
                            reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
         except Exception as ex:
             o_logger.error(ex)
             util.log_error(ex)
+    else:
+        with open(QUEUE_FOLDER + new_post['pic_name'], 'rb') as pic_file:
+            try:
+                bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=pic_file, caption=tel_msg,
+                               reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
+            except Exception as ex:
+                o_logger.error(ex)
+                util.log_error(ex)
     try:
         util.post_to_tumblr(new_post)
     except Exception as ex:
