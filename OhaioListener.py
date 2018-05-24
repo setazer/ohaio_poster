@@ -350,28 +350,42 @@ def main():
                 with session_scope() as session:
                     mon_id = session.query(MonitorItem).filter_by(pic_id=id).first().id
                     mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(MonitorItem.id<=mon_id).all()
-                    pre_add_count = session.query(QueueItem).count()
                     o_logger.debug(f"{call.from_user.username} finished recommendations check")
-                    for item in mon_items:
+                    prog_msg = send_message(chat_id=call.from_user.id,text="Обработка монитора")
+                                         # text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
+                    deleted={service_db[key]['name']:[] for key in service_db}
+                    added={service_db[key]['name']:[] for key in service_db}
+                    for i, item in enumerate(mon_items):
                         if item.to_del:
                             if os.path.exists(MONITOR_FOLDER+item.pic_name):
                                 os.remove(MONITOR_FOLDER+item.pic_name)
                             delete_message(call.message.chat.id, item.tele_msg)
                             session.delete(item.pic)
                             session.flush()
+                            deleted['count']=deleted.get('count',0) + 1
+                            deleted[service_db[item.pic.service]['name']].append(item.pic.post_id)
                         else:
                             item.pic.queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
                             delete_message(TELEGRAM_CHANNEL_MON, item.tele_msg)
                             move_mon_to_q(item.pic_name)
                             session.delete(item)
-                            send_message(chat_id=call.from_user.id,
-                                         text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
-                    post_add_count = session.query(QueueItem).count()
-                    send_message(chat_id=call.from_user.id,
-                                 text=f"Обработка завершена. Добавлено {post_add_count-pre_add_count} пикч.")
+                            added['count'] = added.get('count', 0) + 1
+                            added[service_db[item.pic.service]['name']].append(item.pic.post_id)
+
+                        if i%5==0:
+                            edit_markup(prog_msg.chat.id,prog_msg.message_id,
+                                        reply_markup=markup_templates.gen_status_markup(
+                                        f"Текущий пост: {item.pic.post_id} ({service_db[item.pic.service]['name']})",
+                                        f"Добавлено: {added['count']}",
+                                        f"Удалено: {deleted['count']}"))
+                    post_total = session.query(QueueItem).count()
+                    edit_message(text=f"Обработка завершена. Добавлено {added['count']} пикч. Всего постов: {post_total}\n"+
+                       "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if service != 'count' and ids!=[]]),
+                    chat_id=prog_msg.chat.id,message_id=prog_msg.message_id)
                     if not call.from_user.id == OWNER_ROOM_ID:
                         say_to_owner(
-                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {post_add_count-pre_add_count} пикч.")
+                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {added['count']} пикч.\nВсего постов: {post_total}.\n"+
+                       "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if service != 'count' and ids!=[]]))
                 send_message(call.message.chat.id,f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
