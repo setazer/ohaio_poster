@@ -355,6 +355,7 @@ def main():
                                          # text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
                     deleted={service_db[key]['name']:[] for key in service_db}
                     added={service_db[key]['name']:[] for key in service_db}
+                    deleted['count']=added['count']=0
                     for i, item in enumerate(mon_items):
                         if item.to_del:
                             if os.path.exists(MONITOR_FOLDER+item.pic_name):
@@ -362,14 +363,14 @@ def main():
                             delete_message(call.message.chat.id, item.tele_msg)
                             session.delete(item.pic)
                             session.flush()
-                            deleted['count']=deleted.get('count',0) + 1
+                            deleted['count']=deleted['count'] + 1
                             deleted[service_db[item.pic.service]['name']].append(item.pic.post_id)
                         else:
                             item.pic.queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
                             delete_message(TELEGRAM_CHANNEL_MON, item.tele_msg)
                             move_mon_to_q(item.pic_name)
                             session.delete(item)
-                            added['count'] = added.get('count', 0) + 1
+                            added['count'] = added['count'] + 1
                             added[service_db[item.pic.service]['name']].append(item.pic.post_id)
 
                         if i%5==0:
