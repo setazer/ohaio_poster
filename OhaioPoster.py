@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
+import argparse
 import datetime
 import logging
-import markup_templates
 import os
-import sys
+
 import telebot
+
+import markup_templates
 import util
-import argparse
 from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, TELEGRAM_PROXY, QUEUE_FOLDER
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope
@@ -17,7 +18,7 @@ def check_queue():
         posts = session.query(QueueItem).order_by(QueueItem.id).all()
         new_post = None
         for post in posts:
-            if os.path.exists(QUEUE_FOLDER+post.pic_name) and not post.pic.history_item:
+            if os.path.exists(QUEUE_FOLDER + post.pic_name) and not post.pic.history_item:
                 new_post = {'service': post.pic.service, 'post_id': post.pic.post_id, 'authors': post.pic.authors,
                             'chars': post.pic.chars, 'copyright': post.pic.copyright, 'pic_name': post.pic_name,
                             'sender': post.sender}
@@ -30,7 +31,7 @@ def check_queue():
 def add_to_history(new_post, wall_id):
     with session_scope() as session:
         pic = session.query(Pic).filter_by(post_id=new_post['post_id'],
-                                                                         service=new_post['service']).first()
+                                           service=new_post['service']).first()
         if pic.history_item:
             session.delete(pic.history_item)
             session.flush()
@@ -66,9 +67,9 @@ def main(log):
     log.debug(f"Posting {service_db[new_post['service']]['name']}:{new_post['post_id']} to VK")
     with session_scope() as session:
         pic = session.query(Pic).filter_by(service=new_post['service'],
-                                                                 post_id=new_post['post_id']).first()
+                                           post_id=new_post['post_id']).first()
         queue_len = session.query(QueueItem).count()
-        file_id=pic.file_id
+        file_id = pic.file_id
         minute = datetime.datetime.now().minute
         if args.forced_post or any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times):
             try:
@@ -104,7 +105,7 @@ def main(log):
     except Exception as ex:
         o_logger.error(ex)
         util.log_error(ex)
-    os.remove(QUEUE_FOLDER+new_post['pic_name'])
+    os.remove(QUEUE_FOLDER + new_post['pic_name'])
     bot.send_message(new_post['sender'],
                      f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     if new_post['sender'] != OWNER_ROOM_ID:
@@ -116,7 +117,7 @@ def main(log):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f','--force',dest='forced_post',action='store_true',help='Forced posting')
+    parser.add_argument('-f', '--force', dest='forced_post', action='store_true', help='Forced posting')
     parser.add_argument('-d', '--debug', dest='debugging', action='store_true', help='Verbose output')
     args = parser.parse_args()
 

@@ -1,8 +1,14 @@
-from creds import *
 from db_mng import *
 import vk
 from datetime import date
 from dateutil.relativedelta import relativedelta
+from datetime import date
+
+import vk
+from dateutil.relativedelta import relativedelta
+
+from db_mng import *
+
 # current_album = '250477287'
 with session_scope() as session:
     current_album = session.query(Setting).filter_by(setting='current_album').first().value

@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 import logging
-import markup_templates
 import os
-import requests
-import telebot
 import time
-import util
 from functools import wraps
 
+import requests
+import telebot
 from sqlalchemy.orm import joinedload
 
+import markup_templates
+import util
 from creds import LOG_FILE, TELEGRAM_TOKEN, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, TELEGRAM_PROXY, \
     MONITOR_FOLDER
 from db_mng import Tag, QueueItem, HistoryItem, Pic, MonitorItem, session_scope
 
 err_wait = [1, 5, 15, 30, 60, 300]
+
 
 def bot_action(func):
     @wraps(func)
@@ -36,12 +37,14 @@ def bot_action(func):
             else:
                 break
         return retval
+
     return wrapper
+
 
 def download(sample_url, file_url, filename):
     if not sample_url and not file_url:
         return
-    rep_subdomains = ["assets.","assets2.","simg3.","simg4."]
+    rep_subdomains = ["assets.", "assets2.", "simg3.", "simg4."]
     for subdomain in rep_subdomains:
         sample_url = sample_url.replace(subdomain, '')
         file_url = file_url.replace(subdomain, '')
@@ -53,18 +56,18 @@ def download(sample_url, file_url, filename):
         proxies = {
             'http': "proxy.antizapret.prostovpn.org:3128",
             'https': "proxy.antizapret.prostovpn.org:3128",
-            #'https': "proxy.antizapret.prostovpn.org:3143",
+            # 'https': "proxy.antizapret.prostovpn.org:3143",
         }
 
         if sample_url.startswith('/'):
-            sample_url= "https://" + service_db['dan']['base_url'] + sample_url
+            sample_url = "https://" + service_db['dan']['base_url'] + sample_url
         if file_url.startswith('/'):
             file_url = "https://" + service_db['dan']['base_url'] + file_url
     else:
         proxies = {}
     headers = {'user-agent': 'OhaioPoster',
-                   'content-type': 'application/json; charset=utf-8'}
-    if sample_url==file_url:
+               'content-type': 'application/json; charset=utf-8'}
+    if sample_url == file_url:
         try:
             dl_req = requests.get(sample_url, stream=True, proxies=proxies, headers=headers)
         except requests.exceptions.RequestException as ex:
@@ -80,28 +83,28 @@ def download(sample_url, file_url, filename):
             s_req = None
 
         try:
-            f_req = requests.get(file_url, stream=True, proxies=proxies,headers=headers)
+            f_req = requests.get(file_url, stream=True, proxies=proxies, headers=headers)
         except requests.exceptions.RequestException as ex:
             util.log_error(ex)
             o_logger.debug(ex)
             f_req = None
-        if not any([s_req,f_req]):
+        if not any([s_req, f_req]):
             return False
-        if all([s_req,f_req]):
+        if all([s_req, f_req]):
             s_len = int(s_req.headers.get('content-length', 0))
-            f_len = int(f_req.headers.get('content-length',0))
-            if all([s_len,f_len]):
-                if min(f_len,s_len) ==  s_len:
-                    dl_req= s_req
+            f_len = int(f_req.headers.get('content-length', 0))
+            if all([s_len, f_len]):
+                if min(f_len, s_len) == s_len:
+                    dl_req = s_req
                 else:
                     dl_req = f_req
         elif s_req:
-            dl_req=s_req
+            dl_req = s_req
         elif f_req:
             dl_req = f_req
         else:
             return False
-    total_length = int(dl_req.headers.get('content-length',0))
+    total_length = int(dl_req.headers.get('content-length', 0))
     if not total_length:
         return False
     if os.path.exists(filename) and os.path.getsize(filename) == total_length:
@@ -111,8 +114,10 @@ def download(sample_url, file_url, filename):
             f.write(chunk)
     return True
 
+
 def main(log):
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
     @bot_action
     def send_message(*args, **kwargs):
         return bot.send_message(*args, **kwargs)
@@ -151,9 +156,9 @@ def main(log):
         history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
                    session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
         tags_total = session.query(Tag).filter_by(service=service).count()
-        #tags_total = 1
+        # tags_total = 1
         tags = session.query(Tag).filter_by(service=service).order_by(Tag.tag).all()
-        #tags = [Tag(tag='amekaze_yukinatsu',last_check=0,missing_times=0)]
+        # tags = [Tag(tag='amekaze_yukinatsu',last_check=0,missing_times=0)]
         for (n, tag) in enumerate(tags, 1):
             last_id = tag.last_check
             tag.missing_times = tag.missing_times if tag.missing_times else 0
@@ -163,8 +168,8 @@ def main(log):
                 tag.missing_times += 1
                 if tag.missing_times > 4:
                     send_message(srvc_msg.chat.id,
-                                     f"У тега {tag.tag} нет постов уже после {tag.missing_times} проверок",
-                                     reply_markup=markup_templates.gen_del_tag_markup(tag.tag))
+                                 f"У тега {tag.tag} нет постов уже после {tag.missing_times} проверок",
+                                 reply_markup=markup_templates.gen_del_tag_markup(tag.tag))
                 continue
             else:
                 tag.missing_times = 0
@@ -183,42 +188,44 @@ def main(log):
                         skip = True
                         break
                 if skip: continue
-                if (service, str(post_id)) in qnh or 'webm' in post.get('file_ext',''):
+                if (service, str(post_id)) in qnh or 'webm' in post.get('file_ext', ''):
                     continue
                 if post_id > last_id:
-                    pic_item = session.query(Pic).filter_by(service=service,post_id=str(post_id)).first()
+                    pic_item = session.query(Pic).filter_by(service=service, post_id=str(post_id)).first()
                     if pic_item:
-                        pic = {'item':pic_item,'new':False}
+                        pic = {'item': pic_item, 'new': False}
                     else:
-                        pic = {'item':Pic(service=service,post_id=post_id,
-                                   authors=' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
-                                   chars = ' '.join({f"#{x.split('_(')[0]}" for x in
-                          post.get('tag_string_character').split()}),copyright=' '.join({f'#{x}'.replace('_(series)', '') for x in
-                                                        post.get('tag_string_copyright').split()})),'new':True}
-                    new_posts[post_id] = {'tag': tag.tag, 'sample_url': post.get('file_url'), 'file_url': post.get('large_file_url'),
+                        pic = {'item': Pic(service=service, post_id=post_id,
+                                           authors=' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
+                                           chars=' '.join({f"#{x.split('_(')[0]}" for x in
+                                                           post.get('tag_string_character').split()}),
+                                           copyright=' '.join({f'#{x}'.replace('_(series)', '') for x in
+                                                               post.get('tag_string_copyright').split()})), 'new': True}
+                    new_posts[post_id] = {'tag': tag.tag, 'sample_url': post.get('file_url'),
+                                          'file_url': post.get('large_file_url'),
                                           'dimensions': f"{post['image_height']}x{post['image_width']}"
-                        ,'pic':pic}
+                        , 'pic': pic}
             else:
                 tag.last_check = int(posts[0]['id'])
             if (n % 5) == 0:
                 edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                                              reply_markup=markup_templates.gen_status_markup(
-                                                  f"{tag.tag} [{n}/{tags_total}]",
-                                                  f"Новых постов: {len(new_posts)}"))
+                            reply_markup=markup_templates.gen_status_markup(
+                                f"{tag.tag} [{n}/{tags_total}]",
+                                f"Новых постов: {len(new_posts)}"))
         edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
         srt_new_posts = sorted(new_posts)
         for (n, post_id) in enumerate(srt_new_posts, 1):
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                                          reply_markup=markup_templates.gen_status_markup(
-                                              f"Новых постов: {len(new_posts)}",
-                                              f"Обработка поста: {n}/{len(srt_new_posts)}"))
+                        reply_markup=markup_templates.gen_status_markup(
+                            f"Новых постов: {len(new_posts)}",
+                            f"Обработка поста: {n}/{len(srt_new_posts)}"))
             new_post = new_posts[post_id]
             if (new_post['file_url'] or new_post['sample_url']):
                 _, pic_ext = os.path.splitext(new_post['file_url'])
                 pic_name = f"{service}.{post_id}{pic_ext}"
             else:
                 pic_name = ''
-            if download(new_post['sample_url'],new_post['file_url'], pic_name):
+            if download(new_post['sample_url'], new_post['file_url'], pic_name):
                 new_posts[post_id]['pic_name'] = pic_name
             else:
                 new_posts[post_id]['pic_name'] = None
@@ -233,8 +240,8 @@ def main(log):
                     session.refresh(pic)
                 with open(MONITOR_FOLDER + new_post['pic_name'], 'rb') as picture:
                     mon_msg = send_photo(TELEGRAM_CHANNEL_MON, picture,
-                                   f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
-                                   reply_markup=markup_templates.gen_rec_new_markup(pic.id,pic.post_id))
+                                         f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
+                                         reply_markup=markup_templates.gen_rec_new_markup(pic.id, pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
                 session.merge(pic)

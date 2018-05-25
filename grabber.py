@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 import os
+
 import requests
 from bs4 import BeautifulSoup
 
 from creds import service_db, TELEGRAM_PROXY
 
 
-def grab_booru(service, post_id,pic_name=None):
+def grab_booru(service, post_id, pic_name=None):
     if service == 'gel':
         service_api = 'https://' + service_db[service]['post_api']
         service_tag_api = 'https://' + service_db[service]['tag_api']
@@ -25,15 +26,15 @@ def grab_booru(service, post_id,pic_name=None):
             tag_page = ses.get(service_tag_api + post['tags'])
             tags = BeautifulSoup(tag_page.text, 'lxml').find_all('tag')
             authors = ' '.join(['#' + x['name'] for x in tags
-                       if x['type'] == '1' and x['name'] != '' and x['name'] != 'artist_request'])
+                                if x['type'] == '1' and x['name'] != '' and x['name'] != 'artist_request'])
             characters = ' '.join(['#' + x['name'][
-                                :len(x['name']) if not '_(' in x['name'] else x['name'].find(
-                                    '_(')] for x in tags
-                          if x['type'] == '4' and x['name'] != '' and x[
-                              'name'] != 'character_request'])
+                                         :len(x['name']) if not '_(' in x['name'] else x['name'].find(
+                                             '_(')] for x in tags
+                                   if x['type'] == '4' and x['name'] != '' and x[
+                                       'name'] != 'character_request'])
             copyrights = ' '.join(['#' + x['name'].replace('_(series)', '') for x in tags
-                          if x['type'] == '3' and x['name'] != '' and x[
-                              'name'] != 'copyright_request'])
+                                   if x['type'] == '3' and x['name'] != '' and x[
+                                       'name'] != 'copyright_request'])
             direct = post['sample_url']
     elif service == 'dan':
         service_api = 'http://' + service_db[service]['post_api']
@@ -50,10 +51,11 @@ def grab_booru(service, post_id,pic_name=None):
                 return ('', '', [], [], [])
             authors = ' '.join({f'#{x}' for x in response['tag_string_artist'].split()})
             copyrights = ' '.join({f'#{x}'.replace('_(series)', '') for x in
-                          response['tag_string_copyright'].split()})
+                                   response['tag_string_copyright'].split()})
             characters = ' '.join({f"#{x.split('_(')[0]}" for x in
-                          response['tag_string_character'].split()})
-            direct = 'http://' + service_db[service]['base_url'] + response['large_file_url'] if response['large_file_url'].startswith('/') else response['large_file_url'].replace('https','http')
+                                   response['tag_string_character'].split()})
+            direct = 'http://' + service_db[service]['base_url'] + response['large_file_url'] if response[
+                'large_file_url'].startswith('/') else response['large_file_url'].replace('https', 'http')
             _, pic_ext = os.path.splitext(response['large_file_url'])
             pic_name = f"{service}.{post_id}{pic_ext}"
     else:

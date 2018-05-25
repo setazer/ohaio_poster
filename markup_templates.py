@@ -16,12 +16,13 @@ def gen_progress(progress):
 
 
 def gen_post_link(wall_id):
-    if wall_id==-1:
+    if wall_id == -1:
         return None
     link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=link))
     return link_markup
+
 
 def gen_user_markup(user):
     user_markup = InlineKeyboardMarkup()
@@ -30,7 +31,6 @@ def gen_user_markup(user):
                     InlineKeyboardButton("Нет", callback_data=f"user_deny{user}"))
     user_markup.row(InlineKeyboardButton("Забанить", callback_data=f"user_block{user}"))
     return user_markup
-
 
 
 def gen_status_markup(*args):
@@ -49,17 +49,19 @@ def gen_del_tag_markup(tag):
     return del_tag_markup
 
 
-def gen_rec_new_markup(id,post_id,checked=False):
+def gen_rec_new_markup(id, post_id, checked=False):
     rec_new_markup = InlineKeyboardMarkup()
     to_del = "❎" if not checked else "❌"
     rec_new_markup.row_width = 2
-    rec_new_markup.add(InlineKeyboardButton(text=f"{to_del} Удалить", callback_data=f"rec_del{id} {random.randint(1,1000000)}"),
-                       InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
-                       InlineKeyboardButton(text="Оригинал",
-                                            url=rf"http://danbooru.donmai.us/posts/{post_id}"))
+    rec_new_markup.add(
+        InlineKeyboardButton(text=f"{to_del} Удалить", callback_data=f"rec_del{id} {random.randint(1,1000000)}"),
+        InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
+        InlineKeyboardButton(text="Оригинал",
+                             url=rf"http://danbooru.donmai.us/posts/{post_id}"))
     return rec_new_markup
 
-def gen_tag_fix_markup(tag,suggestions):
+
+def gen_tag_fix_markup(tag, suggestions):
     rec_new_markup = InlineKeyboardMarkup()
     rec_new_markup.row_width = 2
     s_buttons = []
@@ -73,7 +75,8 @@ def gen_tag_fix_markup(tag,suggestions):
         rec_new_markup.add(*s_buttons)
     return rec_new_markup
 
-def gen_channel_inline(new_post,wall_id):
+
+def gen_channel_inline(new_post, wall_id):
     text = f"{service_db[new_post['service']]['name']} {new_post['post_id']}"
     url = f"http://{service_db[new_post['service']]['post_url']}{new_post['post_id']}"
     channel_markup = InlineKeyboardMarkup()
@@ -86,7 +89,7 @@ def gen_channel_inline(new_post,wall_id):
     return channel_markup
 
 
-rec_finish_markup=InlineKeyboardMarkup()
+rec_finish_markup = InlineKeyboardMarkup()
 rec_finish_markup.add(InlineKeyboardButton(text="Завершить обработку рекомендаций", callback_data="rec_finish"))
 
 post_markup = InlineKeyboardMarkup()
@@ -123,7 +126,7 @@ class InlinePaginator():
         else:
             found_buttons = [item for item in self.data if (
                 (item[0] == button_data and item[1] == button_text) if all([button_data, button_text]) else (
-                            item[0] == button_data or item[1] == button_text))]
+                        item[0] == button_data or item[1] == button_text))]
             if found_buttons:
                 for item in found_buttons:
                     self.data.remove(item)

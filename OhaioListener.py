@@ -36,11 +36,11 @@ def main():
                     time.sleep(err_wait[min(i, 5)])
                 except telebot.apihelper.ApiException as exc:
                     o_logger.error(exc)
-                    util.log_error(exc,args,kwargs)
+                    util.log_error(exc, args, kwargs)
                     break
                 except Exception as exc:
                     o_logger.error(exc)
-                    util.log_error(exc,args,kwargs)
+                    util.log_error(exc, args, kwargs)
                     time.sleep(err_wait[min(i, 3)])
                 else:
                     break
@@ -55,14 +55,15 @@ def main():
                 if users.get(message.from_user.id, 0) >= access_number:
                     func(message, *args)
                 else:
-                    if isinstance(message,telebot.types.CallbackQuery):
-                        answer_callback(message.id,"Not allowed!")
+                    if isinstance(message, telebot.types.CallbackQuery):
+                        answer_callback(message.id, "Not allowed!")
                     else:
                         send_message(message.from_user.id, "Not allowed!")
 
             return wrapper
 
         return decorator
+
     # wrappers end
 
     # bot main actions
@@ -72,7 +73,6 @@ def main():
         return bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=disable_web_page_preview,
                                 reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
                                 parse_mode=parse_mode, disable_notification=disable_notification)
-
 
     @bot_action
     def edit_message(text, chat_id=None, message_id=None, inline_message_id=None, parse_mode=None,
@@ -98,13 +98,15 @@ def main():
 
     @bot_action
     def send_photo(chat_id, photo, caption=None, reply_to_message_id=None, reply_markup=None,
-               disable_notification=None):
-        return bot.send_photo( chat_id=chat_id, photo=photo, caption=caption, reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
-                   disable_notification=disable_notification)
+                   disable_notification=None):
+        return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, reply_to_message_id=reply_to_message_id,
+                              reply_markup=reply_markup,
+                              disable_notification=disable_notification)
 
     @bot_action
-    def answer_callback(callback_query_id,text=None, show_alert=None, url=None, cache_time=None):
-        return bot.answer_callback_query(callback_query_id=callback_query_id, text=text, show_alert=show_alert, url=url, cache_time=cache_time)
+    def answer_callback(callback_query_id, text=None, show_alert=None, url=None, cache_time=None):
+        return bot.answer_callback_query(callback_query_id=callback_query_id, text=text, show_alert=show_alert, url=url,
+                                         cache_time=cache_time)
 
     # bot main actions end
 
@@ -128,8 +130,7 @@ def main():
         return send_message(OWNER_ROOM_ID, str(text))
 
     def move_mon_to_q(filename):
-        os.rename(MONITOR_FOLDER+filename,QUEUE_FOLDER+filename)
-
+        os.rename(MONITOR_FOLDER + filename, QUEUE_FOLDER + filename)
 
     logging.Logger.propagate = False
     o_logger = logging.getLogger('OhaioPosterLogger')
@@ -153,7 +154,7 @@ def main():
     # job_queue = 0
     load_users()
     err_wait = [1, 5, 15, 30, 60, 300]
-    error_msg=None
+    error_msg = None
     shutting_down = False
     up_time = dt.datetime.fromtimestamp(time.time())
     cherrypy.config.update({
@@ -162,7 +163,7 @@ def main():
         'server.ssl_module': 'builtin',
         'server.ssl_certificate': WEBHOOK_SSL_CERT,
         'server.ssl_private_key': WEBHOOK_SSL_PRIV,
-        'engine.autoreload.on' : False
+        'engine.autoreload.on': False
 
     })
 
@@ -180,7 +181,6 @@ def main():
                 return ''
             else:
                 raise cherrypy.HTTPError(403)
-
 
     @bot.message_handler(commands=['start'])
     def start(message):
@@ -241,12 +241,14 @@ def main():
     def refill_monitor(message):
         o_logger.debug("refill started")
         with session_scope() as session:
-            queue = [(queue_item.pic.service,queue_item.pic.post_id) for queue_item in session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
-            history = [(history_item.pic.service,history_item.pic.post_id) for history_item in session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
-            monitor= session.query(MonitorItem)
+            queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
+                     session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
+            history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
+                       session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
+            monitor = session.query(MonitorItem)
             monitor.delete(synchronize_session=False)
         for entry in os.listdir(MONITOR_FOLDER):
-            if os.path.isfile(MONITOR_FOLDER+entry):
+            if os.path.isfile(MONITOR_FOLDER + entry):
                 (name, ext) = os.path.splitext(entry)
                 if ext in ['.jpg', '.jpeg', '.png', '.gif']:
                     try:
@@ -255,11 +257,11 @@ def main():
                         continue
                     if (service, post_id) in queue:
                         o_logger.debug(f"{entry} in queue")
-                        os.remove(MONITOR_FOLDER+entry)
+                        os.remove(MONITOR_FOLDER + entry)
                         continue
                     elif (service, post_id) in history:
                         o_logger.debug(f"{entry} in history")
-                        os.remove(MONITOR_FOLDER+entry)
+                        os.remove(MONITOR_FOLDER + entry)
                     # elif (service, post_id) in monitor:
                     #     o_logger.debug("{} in monitor".format(entry))
                     #     with Image.open(entry) as im:
@@ -273,23 +275,24 @@ def main():
                     #         session.merge(mon_item)
                     else:
                         o_logger.debug(f"{entry} not found, recreating")
-                        with Image.open(MONITOR_FOLDER+entry) as im:
+                        with Image.open(MONITOR_FOLDER + entry) as im:
                             (width, height) = im.size
 
-                        with open(MONITOR_FOLDER+entry, 'rb') as pic,session_scope() as session:
-                            pic_item = session.query(Pic).filter_by(service=service,post_id=post_id).first()
+                        with open(MONITOR_FOLDER + entry, 'rb') as pic, session_scope() as session:
+                            pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
                             if not pic_item:
                                 (*rest, authors, characters, copyrights) = grabber.grab_booru(service, post_id)
                                 pic_item = Pic(service=service, post_id=post_id,
-                                             authors=authors,
-                                             chars=characters,
-                                             copyright=copyrights)
+                                               authors=authors,
+                                               chars=characters,
+                                               copyright=copyrights)
                                 session.add(pic_item)
                                 session.flush()
                                 session.refresh(pic_item)
-                            mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo=pic,caption=f'ID: {post_id}\n{width}x{height}',
-                                       reply_markup=markup_templates.gen_rec_new_markup(pic_item.id,post_id))
-                            pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg = mon_msg.message_id)
+                            mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo=pic,
+                                                 caption=f'ID: {post_id}\n{width}x{height}',
+                                                 reply_markup=markup_templates.gen_rec_new_markup(pic_item.id, post_id))
+                            pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
     @access(1)
@@ -340,30 +343,32 @@ def main():
                     post_id = mon_item.pic.post_id
                     mon_item.to_del = checked
                 edit_markup(call.message.chat.id, call.message.message_id,
-                            reply_markup=markup_templates.gen_rec_new_markup(id,post_id, checked))
+                            reply_markup=markup_templates.gen_rec_new_markup(id, post_id, checked))
 
 
             elif call.data.startswith("rec_finish"):
-                answer_callback(call.id,"Обработка началась")
+                answer_callback(call.id, "Обработка началась")
 
                 id = call.data[len("rec_finish"):]
+                util.move_back_to_mon()  # just in case last check failed for some reason
                 with session_scope() as session:
                     mon_id = session.query(MonitorItem).filter_by(pic_id=id).first().id
-                    mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(MonitorItem.id<=mon_id).all()
+                    mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(
+                        MonitorItem.id <= mon_id).all()
                     o_logger.debug(f"{call.from_user.username} finished recommendations check")
-                    prog_msg = send_message(chat_id=call.from_user.id,text="Обработка монитора")
-                                         # text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
-                    deleted={service_db[key]['name']:[] for key in service_db}
-                    added={service_db[key]['name']:[] for key in service_db}
-                    deleted['count']=added['count']=0
+                    prog_msg = send_message(chat_id=call.from_user.id, text="Обработка монитора")
+                    # text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
+                    deleted = {service_db[key]['name']: [] for key in service_db}
+                    added = {service_db[key]['name']: [] for key in service_db}
+                    deleted['count'] = added['count'] = 0
                     for i, item in enumerate(mon_items):
                         if item.to_del:
-                            if os.path.exists(MONITOR_FOLDER+item.pic_name):
-                                os.remove(MONITOR_FOLDER+item.pic_name)
+                            if os.path.exists(MONITOR_FOLDER + item.pic_name):
+                                os.remove(MONITOR_FOLDER + item.pic_name)
                             delete_message(call.message.chat.id, item.tele_msg)
                             session.delete(item.pic)
                             session.flush()
-                            deleted['count']=deleted['count'] + 1
+                            deleted['count'] = deleted['count'] + 1
                             deleted[service_db[item.pic.service]['name']].append(item.pic.post_id)
                         else:
                             item.pic.queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
@@ -373,42 +378,46 @@ def main():
                             added['count'] = added['count'] + 1
                             added[service_db[item.pic.service]['name']].append(item.pic.post_id)
 
-                        if i%5==0:
-                            edit_markup(prog_msg.chat.id,prog_msg.message_id,
+                        if i % 5 == 0:
+                            edit_markup(prog_msg.chat.id, prog_msg.message_id,
                                         reply_markup=markup_templates.gen_status_markup(
-                                        f"Текущий пост: {item.pic.post_id} ({service_db[item.pic.service]['name']})",
-                                        f"Добавлено: {added['count']}",
-                                        f"Удалено: {deleted['count']}"))
+                                            f"Текущий пост: {item.pic.post_id} ({service_db[item.pic.service]['name']})",
+                                            f"Добавлено: {added['count']}",
+                                            f"Удалено: {deleted['count']}"))
                     post_total = session.query(QueueItem).count()
-                    edit_message(text=f"Обработка завершена. Добавлено {added['count']} пикч. Всего постов: {post_total}\n"+
-                       "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if service != 'count' and ids!=[]]),
-                    chat_id=prog_msg.chat.id,message_id=prog_msg.message_id)
+                    edit_message(
+                        text=f"Обработка завершена. Добавлено {added['count']} пикч. Всего постов: {post_total}\n" +
+                             "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
+                                        service != 'count' and ids != []]),
+                        chat_id=prog_msg.chat.id, message_id=prog_msg.message_id)
                     if not call.from_user.id == OWNER_ROOM_ID:
                         say_to_owner(
-                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {added['count']} пикч.\nВсего постов: {post_total}.\n"+
-                       "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if service != 'count' and ids!=[]]))
-                send_message(call.message.chat.id,f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
+                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {added['count']} пикч.\nВсего постов: {post_total}.\n" +
+                            "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
+                                       service != 'count' and ids != []]))
+                send_message(call.message.chat.id, f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
-                service='dan'
-                alter_names = util.get_artist_suggestions(tag,service)
+                service = 'dan'
+                alter_names = util.get_artist_suggestions(tag, service)
                 msg = ""
                 if alter_names:
                     msg += "Найдены возможные замены:\n"
                     for name, alt_names in alter_names.items():
                         msg += f"Тег: {name}\nАльтернативные имена:{alt_names.replace(tag,f'>{tag}<')}\n\n"
                 msg += f"Что делать с тегом '{tag}'?"
-                send_message(call.from_user.id,msg,reply_markup=markup_templates.gen_tag_fix_markup(tag,alter_names.keys()))
+                send_message(call.from_user.id, msg,
+                             reply_markup=markup_templates.gen_tag_fix_markup(tag, alter_names.keys()))
         elif call.data.startswith("tag"):
             if call.data.startswith("tag_rep"):
                 data = call.data[len("tag_rep"):]
                 service = 'dan'
                 tag, alt_tag = data.split()
                 with session_scope() as session:
-                    tag_item = session.query(Tag).filter_by(tag=tag,service=service).first()
+                    tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
                     tag_item.tag = alt_tag
-                answer_callback(call.id,"Тег обновлён")
-                delete_message(call.message.chat.id,call.message.message_id)
+                answer_callback(call.id, "Тег обновлён")
+                delete_message(call.message.chat.id, call.message.message_id)
             elif call.data.startswith("tag_del"):
                 tag = call.data[len("tag_del"):]
                 service = 'dan'
@@ -420,25 +429,25 @@ def main():
             elif call.data.startswith("tag_ren"):
                 tag = call.data[len("tag_ren"):]
                 service = 'dan'
-                msg = bot.send_message(call.message.chat.id,"Тег на замену:")
+                msg = bot.send_message(call.message.chat.id, "Тег на замену:")
                 next_steps[call.from_user.id] = (service, tag)
-                bot.register_next_step_handler(msg,rename_tag_reciever)
-
+                bot.register_next_step_handler(msg, rename_tag_reciever)
 
     def rename_tag_reciever(message):
         new_tag = message.text
         if not valid_artist_name(new_tag):
-            send_message(message.chat.id,"Невалидное имя для тега!")
+            send_message(message.chat.id, "Невалидное имя для тега!")
             return
         if message.from_user.id in next_steps:
             old_tag, service = next_steps[message.from_user.id]
             with session_scope() as session:
                 tag_item = session.query(Tag).filter_by(tag=old_tag, service=service).first()
                 tag_item.tag = new_tag
-            send_message(message.chat.id,"Тег обновлён.")
+            send_message(message.chat.id, "Тег обновлён.")
             del next_steps[message.from_user.id]
         else:
-            send_message(message.chat.id,"Бот почему-то ожидал ответа на переименование тега, но данных об заменяемом теге нет.")
+            send_message(message.chat.id,
+                         "Бот почему-то ожидал ответа на переименование тега, но данных об заменяемом теге нет.")
 
     @bot.message_handler(commands=['queue'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
@@ -447,8 +456,8 @@ def main():
         o_logger.debug(f"{message.from_user.username} issued queue grid generation")
         util.generate_queue_image()
         o_logger.debug("Queue grid picture generation complete. Sending...")
-        with open(QUEUE_GEN_FILE,'rb') as doc:
-            bot.send_document(message.chat.id,doc,caption="Очередь")
+        with open(QUEUE_GEN_FILE, 'rb') as doc:
+            bot.send_document(message.chat.id, doc, caption="Очередь")
 
     @bot.message_handler(commands=['delete'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
@@ -530,8 +539,9 @@ def main():
             list_of_links = [x.strip() for x in filter(None, message.text.split())]
             for link in list_of_links:
                 try:
-                    service, post_url = [(service, service_data['post_url']) for service, service_data in service_db.items() if
-                                             service_data['post_url'] in link][0]
+                    service, post_url = \
+                        [(service, service_data['post_url']) for service, service_data in service_db.items() if
+                         service_data['post_url'] in link][0]
                 except IndexError:
                     continue
 
@@ -618,18 +628,17 @@ def main():
                 if sender.id != OWNER_ROOM_ID:
                     say_to_owner(
                         f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}. "
-                                 f"Всего пикч: {pics_total+1}.")
+                        f"Всего пикч: {pics_total+1}.")
             else:
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча {post_id} ({service_db[service]['name']}) не скачалась. "
                                   f"Заглушка роскомнадзора? Отменено.")
                 session.rollback()
 
-
     with session_scope() as session:
-        for user, in session.query(User.user_id).filter(User.access>=1).all():
-            send_message(user, "I'm alive!",disable_notification=True)
-    for i in range(1,5):
+        for user, in session.query(User.user_id).filter(User.access >= 1).all():
+            send_message(user, "I'm alive!", disable_notification=True)
+    for i in range(1, 5):
         try:
             bot.remove_webhook()
             bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH,

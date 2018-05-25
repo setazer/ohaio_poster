@@ -42,8 +42,8 @@ class Pic(Base):
     chars = Column(String(300))
     copyright = Column(String(300))
     queue_item = relationship("QueueItem", uselist=False, back_populates="pic", cascade="all, delete-orphan")
-    history_item = relationship("HistoryItem", uselist=False, back_populates="pic",cascade="all, delete-orphan")
-    monitor_item = relationship("MonitorItem", uselist=False, back_populates="pic",cascade="all, delete-orphan")
+    history_item = relationship("HistoryItem", uselist=False, back_populates="pic", cascade="all, delete-orphan")
+    monitor_item = relationship("MonitorItem", uselist=False, back_populates="pic", cascade="all, delete-orphan")
     __table_args__ = (UniqueConstraint('service', 'post_id', name='pics_service_post_id_key'),)
 
     def __repr__(self):
@@ -65,16 +65,18 @@ class QueueItem(Base):
     sender = Column(Integer, nullable=False)
     pic_id = Column(Integer, ForeignKey('pics.id'))
     pic = relationship("Pic", back_populates="queue_item")
-   # service = Column(String(15), nullable=False)
-   # post_id = Column(String(15), nullable=False)
+    # service = Column(String(15), nullable=False)
+    # post_id = Column(String(15), nullable=False)
     pic_name = Column(String(30))
-  #  authors = Column(String(300))
-  #  chars = Column(String)
-  #  copyright = Column(String)
-   # __table_args__ = (UniqueConstraint('service', 'post_id', name='queue_service_post_id_key'),)
+
+    #  authors = Column(String(300))
+    #  chars = Column(String)
+    #  copyright = Column(String)
+    # __table_args__ = (UniqueConstraint('service', 'post_id', name='queue_service_post_id_key'),)
 
     def __repr__(self):
         return f"<QueueItem(id='{self.id}', pic_id='{self.pic_id}', sender='{self.sender}', pic_name='{self.pic_name}')>"
+
 
 class MonitorItem(Base):
     __tablename__ = 'monitor'
@@ -88,15 +90,17 @@ class MonitorItem(Base):
     def __repr__(self):
         return f"<MonitorItem(id='{self.id}', pic_id='{self.pic_id}', tele_msg='{self.tele_msg}', pic_name='{self.pic_name}', to_del='{self.to_del}')>"
 
+
 class HistoryItem(Base):
     __tablename__ = 'history'
-   # service = Column(String(15), nullable=False)
-   # post_id = Column(String(15), nullable=False)
+    # service = Column(String(15), nullable=False)
+    # post_id = Column(String(15), nullable=False)
     id = Column(Integer, Sequence('history_id_seq'), primary_key=True)
     pic_id = Column(Integer, ForeignKey('pics.id'))
     pic = relationship("Pic", back_populates="history_item")
     wall_id = Column(Integer)
-   # __table_args__ = (PrimaryKeyConstraint('service', 'post_id', name='history_pkey'),)
+
+    # __table_args__ = (PrimaryKeyConstraint('service', 'post_id', name='history_pkey'),)
 
     def __repr__(self):
         return f"<HistoryItem(pic_id='{self.pic_id}', wall_id='{self.wall_id}')>"
@@ -171,7 +175,7 @@ def session_scope():
 #
 def dump_db():
     sep_line = "@@@@@@@@@@\n"
-    with session_scope() as session, open('dump.db','w') as db:
+    with session_scope() as session, open('dump.db', 'w') as db:
         h_items = session.query(HistoryItem).all()
         q_items = session.query(QueueItem).order_by(QueueItem.id).all()
         users = session.query(User).all()
@@ -211,20 +215,22 @@ def load_db():
         for line in db:
             if line == sep_line:
                 break
-            item=line[:-1].split('###')
-            pics[item[0]] = Pic(service=item[1],post_id=item[2],authors=item[3] if item[3]!='None' else None,chars=item[4] if item[4]!='None' else None,copyright=item[5] if item[5]!='None' else None)
+            item = line[:-1].split('###')
+            pics[item[0]] = Pic(service=item[1], post_id=item[2], authors=item[3] if item[3] != 'None' else None,
+                                chars=item[4] if item[4] != 'None' else None,
+                                copyright=item[5] if item[5] != 'None' else None)
         for line in db:
             if line == sep_line:
                 break
-            item=line[:-1].split('###')
+            item = line[:-1].split('###')
             pic = pics[item[0]]
             pic.history_item = HistoryItem(wall_id=item[1])
         for line in db:
             if line == sep_line:
                 break
-            item=line[:-1].split('###')
+            item = line[:-1].split('###')
             pic = pics[item[0]]
-            pic.queue_item = QueueItem(sender=item[1],pic_name=item[2])
+            pic.queue_item = QueueItem(sender=item[1], pic_name=item[2])
 
         for pic in pics.values():
             session.add(pic)
@@ -233,19 +239,18 @@ def load_db():
             if line == sep_line:
                 break
             item = line[:-1].split('###')
-            user = User(user_id=item[0],access=item[1])
+            user = User(user_id=item[0], access=item[1])
             session.add(user)
         for line in db:
             if line == sep_line:
                 break
             item = line[:-1].split('###')
-            setting = Setting(setting=item[0],value=item[1])
+            setting = Setting(setting=item[0], value=item[1])
             session.add(setting)
         for line in db:
             item = line[:-1].split('###')
-            tag = Tag(service=item[0],tag=item[1], last_check=item[2],missing_times=item[3])
+            tag = Tag(service=item[0], tag=item[1], last_check=item[2], missing_times=item[3])
             session.add(tag)
 
-
-#dump_db()
-#load_db()
+# dump_db()
+# load_db()
