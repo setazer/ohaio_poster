@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
-import cherrypy
 import json
+
+import cherrypy
 import telebot
-import util
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_VKUPDATES, TELEGRAM_PROXY, VK_GROUP_ID
+import util
+from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_VKUPDATES, REQUESTS_PROXY, VK_GROUP_ID
 
 WEBHOOK_LISTEN = '0.0.0.0'
 WEBHOOK_PORT = 8237
-telebot.apihelper.proxy = TELEGRAM_PROXY
+telebot.apihelper.proxy = REQUESTS_PROXY
 bot = telebot.TeleBot(TELEGRAM_TOKEN, False)
 
 

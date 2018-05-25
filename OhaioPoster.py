@@ -8,7 +8,7 @@ import telebot
 
 import markup_templates
 import util
-from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, TELEGRAM_PROXY, QUEUE_FOLDER
+from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope
 
@@ -42,7 +42,7 @@ def add_to_history(new_post, wall_id):
 
 
 def main(log):
-    telebot.apihelper.proxy = TELEGRAM_PROXY
+    telebot.apihelper.proxy = REQUESTS_PROXY
     vk_posting_times = [(55, 60), (0, 5), (25, 35)]
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
     log.debug('Checking queue for new posts')

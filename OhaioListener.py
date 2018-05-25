@@ -144,7 +144,7 @@ def main():
     o_ch.setLevel(logging.ERROR)
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
-    telebot.apihelper.proxy = TELEGRAM_PROXY
+    telebot.apihelper.proxy = REQUESTS_PROXY
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
     next_steps = {}
     paginators = {}
@@ -281,7 +281,7 @@ def main():
                         with open(MONITOR_FOLDER + entry, 'rb') as pic, session_scope() as session:
                             pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
                             if not pic_item:
-                                (*rest, authors, characters, copyrights) = grabber.grab_booru(service, post_id)
+                                (*_, authors, characters, copyrights) = grabber.get_metadata(service, post_id)
                                 pic_item = Pic(service=service, post_id=post_id,
                                                authors=authors,
                                                chars=characters,
@@ -557,37 +557,6 @@ def main():
         else:
             send_message(message.chat.id, "Не распарсил.")
 
-    def download(dl_msg, url, filename, preview=False):
-        rep_subdomains = ["assets.", "assets2.", "simg3.", "simg4."]
-        for subdomain in rep_subdomains:
-            url = url.replace(subdomain, '')
-        if url.startswith('//'):
-            url = 'http:' + url
-
-        if filename.startswith('dan'):
-            proxies = TELEGRAM_PROXY
-        else:
-            proxies = {}
-        req = requests.get(url, stream=True, proxies=proxies)
-        total_length = req.headers.get('content-length', 0)
-        if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
-            return True
-        if not total_length:  # no content length header
-            return False
-        with open(QUEUE_FOLDER + filename, 'wb') as f:
-            dl = 0
-            start = time.clock()
-            for chunk in req.iter_content(1024):
-                f.write(chunk)
-                if not preview:
-                    dl += len(chunk)
-                    done = int(100 * dl / int(total_length))
-                    if (time.clock() - start) > 1:
-                        edit_markup(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
-                                    reply_markup=markup_templates.gen_progress(done))
-                        start = time.clock()
-        return True
-
     # @wait_for_job("Post")
     def queue_picture(sender, service, post_id):
         with session_scope() as session:
@@ -613,14 +582,14 @@ def main():
                                       f"Всего пикч: {pics_total+1}.")
                     return
             o_logger.debug("Getting post info")
-            (pic_name, direct, authors, characters, copyrights) = grabber.grab_booru(service, post_id)
+            (pic_name, direct, authors, characters, copyrights) = grabber.get_metadata(service, post_id)
             if not direct:
                 send_message(sender.id, "Скачивание пикчи не удалось. Забаненный пост?")
                 return
             new_pic = Pic(service=service, post_id=post_id, authors=authors, chars=characters, copyright=copyrights)
             new_pic.queue_item = QueueItem(sender=sender.id, pic_name=pic_name)
             dl_msg = send_message(sender.id, "Скачиваю пикчу")
-            if download(dl_msg, direct, pic_name):
+            if grabber.download(direct, QUEUE_FOLDER + pic_name):
                 session.add(new_pic)
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "

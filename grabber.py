@@ -4,10 +4,11 @@ import os
 import requests
 from bs4 import BeautifulSoup
 
-from creds import service_db, TELEGRAM_PROXY
+import util
+from creds import service_db, REQUESTS_PROXY
 
 
-def grab_booru(service, post_id, pic_name=None):
+def get_metadata(service, post_id, pic_name=None):
     if service == 'gel':
         service_api = 'https://' + service_db[service]['post_api']
         service_tag_api = 'https://' + service_db[service]['tag_api']
@@ -40,7 +41,7 @@ def grab_booru(service, post_id, pic_name=None):
         service_api = 'http://' + service_db[service]['post_api']
         service_login = 'http://' + service_db[service]['login_url']
         service_payload = service_db[service]['payload']
-        proxies = TELEGRAM_PROXY
+        proxies = REQUESTS_PROXY
         with requests.Session() as ses:
 
             ses.headers = {'user-agent': 'OhaioPoster',
@@ -54,9 +55,8 @@ def grab_booru(service, post_id, pic_name=None):
                                    response['tag_string_copyright'].split()})
             characters = ' '.join({f"#{x.split('_(')[0]}" for x in
                                    response['tag_string_character'].split()})
-            direct = 'http://' + service_db[service]['base_url'] + response['large_file_url'] if response[
-                'large_file_url'].startswith('/') else response['large_file_url'].replace('https', 'http')
-            _, pic_ext = os.path.splitext(response['large_file_url'])
+            direct = get_less_sized_url(response['large_file_url'], response['file_url'], service=service)
+            pic_ext = response['file_ext']
             pic_name = f"{service}.{post_id}{pic_ext}"
     else:
         pic_name = ''
@@ -65,3 +65,52 @@ def grab_booru(service, post_id, pic_name=None):
         characters = []
         copyrights = []
     return (pic_name, direct, authors, characters, copyrights)
+
+
+def get_less_sized_url(*urls, service):
+    sizes = {}
+    for url in urls:
+        url = make_usable_url(url, service)
+        req = requests.get(url, stream=True, proxies=REQUESTS_PROXY)
+        req_size = req.headers.get('content-length')
+        if req_size:
+            sizes[url] = int(req_size)
+    least_sized = sorted(sizes, key=sizes.get)[0]
+    return least_sized
+
+
+def make_usable_url(url, service):
+    if url.startswith('//'):
+        url = "https:" + url
+    elif url.startswith("/"):
+        url = f"https://{service_db[service]['base_url']}{url}"
+    return url
+
+
+def download(url, filename):
+    make_usable_url(url, os.path.basename(filename).split('.')[0])
+    proxies = REQUESTS_PROXY
+    headers = {'user-agent': 'OhaioPoster',
+               'content-type': 'application/json; charset=utf-8'}
+    try:
+        req = requests.get(url, stream=True, proxies=proxies, headers=headers)
+    except requests.exceptions.RequestException as ex:
+        util.log_error(ex)
+        return False
+    total_length = req.headers.get('content-length', 0)
+    if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
+        return True
+    if not total_length:  # no content length header
+        return False
+    with open(filename, 'wb') as f:
+        # dl = 0
+        # start = time.clock()
+        for chunk in req.iter_content(1024):
+            f.write(chunk)
+            # dl += len(chunk)
+            # done = int(100 * dl / int(total_length))
+            # if (time.clock() - start) > 1:
+            #     edit_markup(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
+            #                 reply_markup=markup_templates.gen_progress(done))
+            #     start = time.clock()
+    return True

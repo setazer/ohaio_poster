@@ -150,7 +150,7 @@ def get_last_posts_ids(service):
     service_payload = service_db[service]['payload']
     service_login = 'http://' + service_db[service]['login_url']
     tags_api = 'http://' + service_db[service]['posts_api']
-    proxies = TELEGRAM_PROXY
+    proxies = REQUESTS_PROXY
     with session_scope() as session, requests.Session() as ses:
         ses.post(service_login, data=service_payload)
         i = 1
@@ -219,7 +219,7 @@ def get_artist_suggestions(tag, service):
     service_artist_api = 'http://' + service_db[service]['artist_api']
     service_login = 'http://' + service_db[service]['login_url']
     service_payload = service_db[service]['payload']
-    proxies = TELEGRAM_PROXY
+    proxies = REQUESTS_PROXY
     with requests.Session() as ses:
         ses.headers = {'user-agent': 'OhaioPoster/{0}'.format('0.0.0.1'),
                        'content-type': 'application/json; charset=utf-8'}

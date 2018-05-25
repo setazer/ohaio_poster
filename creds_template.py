@@ -26,10 +26,7 @@ TELEGRAM_TOKEN = '' # get it from https://t.me/botfather
 TELEGRAM_CHANNEL = '' # channel id for posting pictures to
 TELEGRAM_CHANNEL_MON = '' # channel id where OhaioMonitor posts suggested pictures
 TELEGRAM_CHANNEL_VKUPDATES = '' #  channel id where OhaioVKUpdates posts stuff happening in VK Group
-TELEGRAM_PROXY = {}
-#    "http": "proxy.antizapret.prostovpn.org:3128",
-#    "https": "proxy.antizapret.prostovpn.org:3128"
-#}
+
 OWNER_ROOM_ID = 0 # bot owner telegram id
 
 # CherryPy config
@@ -42,6 +39,10 @@ WEBHOOK_URL_BASE = f"https://{WEBHOOK_HOST}:{WEBHOOK_PORT}"
 WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
 
 # Misc
+REQUESTS_PROXY = {}
+#    "http": "proxy.antizapret.prostovpn.org:3128",
+#    "https": "proxy.antizapret.prostovpn.org:3128"
+# }
 MONITOR_FOLDER = getcwd()+'/pics/mon/'
 QUEUE_FOLDER = getcwd()+'/pics/q/'
 LOG_FILE = 'Ohaio.log'

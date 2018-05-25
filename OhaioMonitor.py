@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import logging
-import os
 import time
 from functools import wraps
 
@@ -8,9 +7,10 @@ import requests
 import telebot
 from sqlalchemy.orm import joinedload
 
+import grabber
 import markup_templates
 import util
-from creds import LOG_FILE, TELEGRAM_TOKEN, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, TELEGRAM_PROXY, \
+from creds import LOG_FILE, TELEGRAM_TOKEN, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
     MONITOR_FOLDER
 from db_mng import Tag, QueueItem, HistoryItem, Pic, MonitorItem, session_scope
 
@@ -41,80 +41,6 @@ def bot_action(func):
     return wrapper
 
 
-def download(sample_url, file_url, filename):
-    if not sample_url and not file_url:
-        return
-    rep_subdomains = ["assets.", "assets2.", "simg3.", "simg4."]
-    for subdomain in rep_subdomains:
-        sample_url = sample_url.replace(subdomain, '')
-        file_url = file_url.replace(subdomain, '')
-    if sample_url.startswith('//'):
-        sample_url = 'https:' + sample_url
-    if file_url.startswith('//'):
-        file_url = 'https:' + file_url
-    if filename.startswith('dan'):
-        proxies = {
-            'http': "proxy.antizapret.prostovpn.org:3128",
-            'https': "proxy.antizapret.prostovpn.org:3128",
-            # 'https': "proxy.antizapret.prostovpn.org:3143",
-        }
-
-        if sample_url.startswith('/'):
-            sample_url = "https://" + service_db['dan']['base_url'] + sample_url
-        if file_url.startswith('/'):
-            file_url = "https://" + service_db['dan']['base_url'] + file_url
-    else:
-        proxies = {}
-    headers = {'user-agent': 'OhaioPoster',
-               'content-type': 'application/json; charset=utf-8'}
-    if sample_url == file_url:
-        try:
-            dl_req = requests.get(sample_url, stream=True, proxies=proxies, headers=headers)
-        except requests.exceptions.RequestException as ex:
-            util.log_error(ex)
-            o_logger.debug(ex)
-            return False
-    else:
-        try:
-            s_req = requests.get(sample_url, stream=True, proxies=proxies, headers=headers)
-        except requests.exceptions.RequestException as ex:
-            util.log_error(ex)
-            o_logger.debug(ex)
-            s_req = None
-
-        try:
-            f_req = requests.get(file_url, stream=True, proxies=proxies, headers=headers)
-        except requests.exceptions.RequestException as ex:
-            util.log_error(ex)
-            o_logger.debug(ex)
-            f_req = None
-        if not any([s_req, f_req]):
-            return False
-        if all([s_req, f_req]):
-            s_len = int(s_req.headers.get('content-length', 0))
-            f_len = int(f_req.headers.get('content-length', 0))
-            if all([s_len, f_len]):
-                if min(f_len, s_len) == s_len:
-                    dl_req = s_req
-                else:
-                    dl_req = f_req
-        elif s_req:
-            dl_req = s_req
-        elif f_req:
-            dl_req = f_req
-        else:
-            return False
-    total_length = int(dl_req.headers.get('content-length', 0))
-    if not total_length:
-        return False
-    if os.path.exists(filename) and os.path.getsize(filename) == total_length:
-        return True
-    with open(MONITOR_FOLDER + filename, 'wb') as f:
-        for chunk in dl_req.iter_content(1024):
-            f.write(chunk)
-    return True
-
-
 def main(log):
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
@@ -138,8 +64,10 @@ def main(log):
     def send_photo(*args, **kwargs):
         return bot.send_photo(*args, **kwargs)
 
-    telebot.apihelper.proxy = TELEGRAM_PROXY
-    srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
+    telebot.apihelper.proxy = REQUESTS_PROXY
+    srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+    repost_previous_monitor_check(bot)
+    edit_message(srvc_msg.chat.id, srvc_msg.message_id, "Получаю обновления тегов")
     service = 'dan'
     with session_scope() as session:
         pic = None
@@ -148,7 +76,7 @@ def main(log):
         tags_api = 'http://' + service_db[service]['posts_api']
         # post_api = 'https://' + service_db[service]['post_api']
         new_posts = {}
-        proxies = TELEGRAM_PROXY
+        proxies = REQUESTS_PROXY
         with requests.Session() as ses:
             ses.post(service_login, data=service_payload)
         queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
@@ -161,7 +89,7 @@ def main(log):
         # tags = [Tag(tag='amekaze_yukinatsu',last_check=0,missing_times=0)]
         for (n, tag) in enumerate(tags, 1):
             last_id = tag.last_check
-            tag.missing_times = tag.missing_times if tag.missing_times else 0
+            tag.missing_times = tag.missing_times or 0
             req = ses.get(tags_api.format(tag.tag) + '+-rating:explicit&limit=20', proxies=proxies)
             posts = req.json()
             if not posts:
@@ -178,17 +106,17 @@ def main(log):
                 try:
                     post_id = post['id']
                 except TypeError as ex:
-                    util.log_error(ex)
+                    util.log_error(ex, kwargs=posts)
                     o_logger.debug(ex)
                     o_logger.debug(posts)
                     break
                 skip = False
                 for b_tag in BANNED_TAGS:
-                    if b_tag in post.get('tag_string'):
+                    if b_tag in post['tag_string']:
                         skip = True
                         break
                 if skip: continue
-                if (service, str(post_id)) in qnh or 'webm' in post.get('file_ext', ''):
+                if (service, str(post_id)) in qnh or 'webm' in post['file_ext']:
                     continue
                 if post_id > last_id:
                     pic_item = session.query(Pic).filter_by(service=service, post_id=str(post_id)).first()
@@ -200,9 +128,9 @@ def main(log):
                                            chars=' '.join({f"#{x.split('_(')[0]}" for x in
                                                            post.get('tag_string_character').split()}),
                                            copyright=' '.join({f'#{x}'.replace('_(series)', '') for x in
-                                                               post.get('tag_string_copyright').split()})), 'new': True}
-                    new_posts[post_id] = {'tag': tag.tag, 'sample_url': post.get('file_url'),
-                                          'file_url': post.get('large_file_url'),
+                                                               post['tag_string_copyright'].split()})), 'new': True}
+                    new_posts[post_id] = {'tag': tag.tag, 'sample_url': post['file_url'],
+                                          'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
                                           'dimensions': f"{post['image_height']}x{post['image_width']}"
                         , 'pic': pic}
             else:
@@ -221,11 +149,12 @@ def main(log):
                             f"Обработка поста: {n}/{len(srt_new_posts)}"))
             new_post = new_posts[post_id]
             if (new_post['file_url'] or new_post['sample_url']):
-                _, pic_ext = os.path.splitext(new_post['file_url'])
+                pic_ext = new_post['file_ext']
                 pic_name = f"{service}.{post_id}{pic_ext}"
             else:
                 pic_name = ''
-            if download(new_post['sample_url'], new_post['file_url'], pic_name):
+            dl_url = grabber.get_less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
+            if grabber.download(dl_url, pic_name):
                 new_posts[post_id]['pic_name'] = pic_name
             else:
                 new_posts[post_id]['pic_name'] = None
@@ -246,6 +175,28 @@ def main(log):
                 pic.file_id = mon_msg.photo[0].file_id
                 session.merge(pic)
         bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+
+
+def repost_previous_monitor_check(bot: telebot.TeleBot):
+    with session_scope() as session:
+        mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
+        for mon_item in mon_items:
+            try:
+                bot.delete_message(TELEGRAM_CHANNEL_MON, mon_items.tele_msg)
+            except telebot.apihelper.ApiException as exc:
+                o_logger.error(exc)
+                util.log_error(exc)
+            try:
+                new_msg = bot.send_photo(TELEGRAM_CHANNEL_MON, photo=mon_item.pic.file_id,
+                                         caption=f"{' '.join([f'#{author}' for author in mon_item.pic.authors.split()])}\n"
+                                                 f"ID: {mon_item.pic.post_id}",
+                                         reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
+                                                                                          mon_item.pic.post_id))
+            except telebot.apihelper.ApiException as exc:
+                o_logger.error(exc)
+                util.log_error(exc)
+                continue
+            mon_item.tele_msg = new_msg.message_id
 
 
 if __name__ == '__main__':
