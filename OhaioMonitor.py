@@ -67,7 +67,7 @@ def main(log):
     telebot.apihelper.proxy = REQUESTS_PROXY
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
     repost_previous_monitor_check(bot)
-    edit_message(srvc_msg.chat.id, srvc_msg.message_id, "Получаю обновления тегов")
+    edit_message("Получаю обновления тегов", srvc_msg.chat.id, srvc_msg.message_id)
     service = 'dan'
     with session_scope() as session:
         pic = None
