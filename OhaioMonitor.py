@@ -115,7 +115,7 @@ def main(log):
                     if b_tag in post['tag_string']:
                         skip = True
                         break
-                if skip: continue
+                if not any([post.get('large_file_url'), post.get('file_url')]) or skip: continue
                 if (service, str(post_id)) in qnh or 'webm' in post['file_ext']:
                     continue
                 if post_id > last_id:
