@@ -116,7 +116,7 @@ def main(log):
                         skip = True
                         break
                 if not any([post.get('large_file_url'), post.get('file_url')]) or skip: continue
-                if (service, str(post_id)) in qnh or 'webm' in post['file_ext']:
+                if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
                     continue
                 if post_id > last_id:
                     pic_item = session.query(Pic).filter_by(service=service, post_id=str(post_id)).first()
