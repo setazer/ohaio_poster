@@ -28,11 +28,11 @@ def bot_action(func):
                 time.sleep(err_wait[min(i, 5)])
             except telebot.apihelper.ApiException as exc:
                 o_logger.error(exc)
-                util.log_error(exc)
+                util.log_error(exc, args, kwargs)
                 break
             except Exception as exc:
                 o_logger.error(exc)
-                util.log_error(exc)
+                util.log_error(exc, args, kwargs)
                 time.sleep(err_wait[min(i, 3)])
             else:
                 break
@@ -174,7 +174,7 @@ def main(log):
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
                 session.merge(pic)
-        bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+        delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
 def repost_previous_monitor_check(bot: telebot.TeleBot):
