@@ -496,7 +496,7 @@ def main():
         except IndexError:
             send_message(message.chat.id, text="А что передавать?")
             return
-        msg = f"Сообщение от {message.from_user.username}:\n{param}"
+        msg = f"Сообщение от {message.from_user.username}:\n{' '.join(param)}"
         with session_scope() as session:
             for user, in session.query(User.user_id).filter(User.access >= 1).all():
                 if user != message.chat.id:
