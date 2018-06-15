@@ -16,6 +16,7 @@ from sqlalchemy.orm import joinedload
 import grabber
 import markup_templates
 import util
+from OhaioMonitor import check_recommendations
 # Испорт рег. данных
 from creds import *
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
@@ -500,14 +501,19 @@ def main():
         except IndexError:
             last_check = 0
         tag = param[0]
+
         with session_scope() as session:
             rec_tag = session.query(Tag).filter_by(tag=tag, service='dan').first()
             if not rec_tag:
                 rec_tag = Tag(tag=tag, service='dan', last_check=last_check, missing_times=0)
                 session.add(rec_tag)
                 send_message(message.chat.id, text="Тег добавлен")
+                check_monitor = True
             else:
                 send_message(message.chat.id, text="Тег уже есть")
+                check_monitor = False
+        if check_monitor:
+            check_recommendations(tag)
 
     @bot.message_handler(func=lambda m: bool(users.get(m.chat.id)))
     @access(1)

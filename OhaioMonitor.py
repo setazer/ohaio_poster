@@ -41,7 +41,7 @@ def bot_action(func):
     return wrapper
 
 
-def main(log):
+def check_recommendations(new_tag=None):
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
     @bot_action
@@ -83,10 +83,9 @@ def main(log):
                  session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
         history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
                    session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
-        tags_total = session.query(Tag).filter_by(service=service).count()
-        # tags_total = 1
-        tags = session.query(Tag).filter_by(service=service).order_by(Tag.tag).all()
-        # tags = [Tag(tag='amekaze_yukinatsu',last_check=0,missing_times=0)]
+        tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
+        tags = session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
+            Tag).filter_by(service=service, tag=new_tag).all()
         for (n, tag) in enumerate(tags, 1):
             last_id = tag.last_check
             tag.missing_times = tag.missing_times or 0
@@ -210,4 +209,4 @@ if __name__ == '__main__':
     o_ch.setLevel(logging.DEBUG)
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
-    main(o_logger)
+    check_recommendations(o_logger)
