@@ -488,6 +488,20 @@ def main():
     #     util.refill_history()
     #     send_message(message.chat.id, "История перезаполнена.")
 
+    @bot.message_handler(commands=['broadcast'], func=lambda m: bool(users.get(m.chat.id)))
+    @access(2)
+    def broadcast_message(message):
+        try:
+            param = message.text.split()[1:]
+        except IndexError:
+            send_message(message.chat.id, text="А что передавать?")
+            return
+        msg = f"Сообщение от {message.from_user.username}:\n{param}"
+        with session_scope() as session:
+            for user, in session.query(User.user_id).filter(User.access >= 1).all():
+                if user != message.chat.id:
+                    send_message(user, msg)
+
     @bot.message_handler(commands=['add_tag'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def add_recommendation_tag(message):
