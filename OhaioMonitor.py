@@ -209,4 +209,4 @@ if __name__ == '__main__':
     o_ch.setLevel(logging.DEBUG)
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
-    check_recommendations(o_logger)
+    check_recommendations()
