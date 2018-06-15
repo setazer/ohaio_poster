@@ -501,6 +501,7 @@ def main():
             for user, in session.query(User.user_id).filter(User.access >= 1).all():
                 if user != message.chat.id:
                     send_message(user, msg)
+        send_message(message.chat.id, text="Броадкаст отправлен.")
 
     @bot.message_handler(commands=['add_tag'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
