@@ -28,11 +28,11 @@ def bot_action(func):
                 time.sleep(err_wait[min(i, 5)])
             except telebot.apihelper.ApiException as exc:
                 o_logger.error(exc)
-                util.log_error(exc)
+                util.log_error(exc, args, kwargs)
                 break
             except Exception as exc:
                 o_logger.error(exc)
-                util.log_error(exc)
+                util.log_error(exc, args, kwargs)
                 time.sleep(err_wait[min(i, 3)])
             else:
                 break
@@ -67,7 +67,7 @@ def check_recommendations(new_tag=None):
     telebot.apihelper.proxy = REQUESTS_PROXY
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
     repost_previous_monitor_check(bot)
-    edit_message(srvc_msg.chat.id, srvc_msg.message_id, "Получаю обновления тегов")
+    edit_message("Получаю обновления тегов", srvc_msg.chat.id, srvc_msg.message_id)
     service = 'dan'
     with session_scope() as session:
         pic = None
@@ -114,8 +114,8 @@ def check_recommendations(new_tag=None):
                     if b_tag in post['tag_string']:
                         skip = True
                         break
-                if skip: continue
-                if (service, str(post_id)) in qnh or 'webm' in post['file_ext']:
+                if not any([post.get('large_file_url'), post.get('file_url')]) or skip: continue
+                if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
                     continue
                 if post_id > last_id:
                     pic_item = session.query(Pic).filter_by(service=service, post_id=str(post_id)).first()
@@ -149,11 +149,11 @@ def check_recommendations(new_tag=None):
             new_post = new_posts[post_id]
             if (new_post['file_url'] or new_post['sample_url']):
                 pic_ext = new_post['file_ext']
-                pic_name = f"{service}.{post_id}{pic_ext}"
+                pic_name = f"{service}.{post_id}.{pic_ext}"
             else:
                 pic_name = ''
             dl_url = grabber.get_less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
-            if grabber.download(dl_url, pic_name):
+            if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
                 new_posts[post_id]['pic_name'] = pic_name
             else:
                 new_posts[post_id]['pic_name'] = None
@@ -173,7 +173,7 @@ def check_recommendations(new_tag=None):
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
                 session.merge(pic)
-        bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+        delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
 def repost_previous_monitor_check(bot: telebot.TeleBot):
@@ -181,13 +181,13 @@ def repost_previous_monitor_check(bot: telebot.TeleBot):
         mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
         for mon_item in mon_items:
             try:
-                bot.delete_message(TELEGRAM_CHANNEL_MON, mon_items.tele_msg)
+                bot.delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
             except telebot.apihelper.ApiException as exc:
                 o_logger.error(exc)
                 util.log_error(exc)
             try:
                 new_msg = bot.send_photo(TELEGRAM_CHANNEL_MON, photo=mon_item.pic.file_id,
-                                         caption=f"{' '.join([f'#{author}' for author in mon_item.pic.authors.split()])}\n"
+                                         caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
                                                  f"ID: {mon_item.pic.post_id}",
                                          reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
                                                                                           mon_item.pic.post_id))

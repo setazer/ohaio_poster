@@ -57,7 +57,7 @@ def get_metadata(service, post_id, pic_name=None):
                                    response['tag_string_character'].split()})
             direct = get_less_sized_url(response['large_file_url'], response['file_url'], service=service)
             pic_ext = response['file_ext']
-            pic_name = f"{service}.{post_id}{pic_ext}"
+            pic_name = f"{service}.{post_id}.{pic_ext}"
     else:
         pic_name = ''
         direct = ''
