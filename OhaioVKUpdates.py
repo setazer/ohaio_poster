@@ -54,7 +54,7 @@ def process_request(json_string):
                      reply_markup=messages_link())
         return 'ok'
     elif update["type"] == "photo_comment_new":
-        user_data = api.users.get(user_ids=update['object']['from_id'])
+        user_data = api.users.get(user_ids=update['object']['from_id'])[0]
         send_message(TELEGRAM_CHANNEL_VKUPDATES,
                      f"🌄️ Новый комментарий к фотографии.\n\n{user_data['first_name']} {user_data['last_name']}:\n{update['object']['text']}",
                      reply_markup=photo_link(update))
@@ -65,7 +65,7 @@ def process_request(json_string):
                      reply_markup=post_link(update))
         return 'ok'
     elif update["type"] == "wall_reply_new":
-        user_data = api.users.get(user_ids=update['object']['from_id'])
+        user_data = api.users.get(user_ids=update['object']['from_id'])[0]
         send_message(TELEGRAM_CHANNEL_VKUPDATES,
                      f"📃️ Новый комментарий на стене.\n\n{user_data['first_name']} {user_data['last_name']}:\n{update['object']['text']}",
                      reply_markup=comment_link(update))
