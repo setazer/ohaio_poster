@@ -1,23 +1,17 @@
-from db_mng import *
-import vk
-from datetime import date
-from dateutil.relativedelta import relativedelta
 from datetime import date
 
-import vk
+import vk_requests
 from dateutil.relativedelta import relativedelta
 
 from db_mng import *
 
-# current_album = '250477287'
 with session_scope() as session:
     current_album = session.query(Setting).filter_by(setting='current_album').first().value
     previous_album = session.query(Setting).filter_by(setting='previous_album').first().value
 today = date.today()
 d = today - relativedelta(months=1)
 month_start, month_end = date(d.year, d.month, 1), date(today.year, today.month, 1) - relativedelta(days=1)
-vk_session = vk.Session(access_token=VK_TOKEN)
-api = vk.API(vk_session,v=5.71)
+api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
 
 def get_photos(cur_album,old_album,offset=0):
     acc=[]

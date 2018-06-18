@@ -7,7 +7,7 @@ import traceback
 
 import pytumblr
 import requests
-import vk
+import vk_requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from sqlalchemy import and_
 
@@ -33,10 +33,7 @@ def post_picture(new_post, msg='#ohaioposter'):
     post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id']
     # Авторизация
     msg += "\nОригинал: " + post_url
-    # api = vk_requests.create_api(APP_ID, VK_LOGIN, VK_PASS, scope=['wall','photos'], v=5.62)
-    # api = vk_requests.create_api(access_token=VK_TOKEN, v=5.62)
-    session = vk.Session(access_token=VK_TOKEN)
-    api = vk.API(session, v='5.73')
+    api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
     # Загрузка картинки на сервер
     with open(QUEUE_FOLDER + new_post['pic_name'], 'rb') as pic:
         current_album = get_current_album()
@@ -116,8 +113,7 @@ def get_current_album():
         if int(num_photos.value) < 10000:
             return cur_album.value
         elif num_photos == '10000':
-            vk_session = vk.Session(access_token=VK_TOKEN)
-            api = vk.API(vk_session, v=5.71)
+            api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
             albums = api.photos.getAlbums(owner_id='-' + VK_GROUP_ID, album_ids=(int(cur_album.value),))['items']
             # latest_album = [id for id in sorted(albums, key=lambda k: k['updated'], reverse=True)][0]
             latest_album = albums[0]
@@ -139,8 +135,7 @@ def sync_num_photos():
     with session_scope() as session:
         cur_album = session.query(Setting).filter_by(setting='current_album').first()
         num_photos = session.query(Setting).filter_by(setting='num_photos').first()
-        vk_session = vk.Session(access_token=VK_TOKEN)
-        api = vk.API(vk_session, v=5.71)
+        api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
         albums = api.photos.getAlbums(owner_id='-' + VK_GROUP_ID, album_ids=(int(cur_album.value),))['items']
         latest_album = albums[0]
         num_photos.value = str(latest_album['size'])
@@ -175,8 +170,7 @@ def update_header():
         queue_num = session.query(QueueItem).count()
     # api = vk_requests.create_api(APP_ID, VK_LOGIN, VK_PASS, scope=['wall', 'photos'], v=5.62)
     # api = vk_requests.create_api(access_token=VK_TOKEN, v=5.62)
-    session = vk.Session(access_token=VK_TOKEN)
-    api = vk.API(session, v='5.73')
+    api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
     img = Image.open('header.png')
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype("VISITOR_RUS.TTF", 10)
