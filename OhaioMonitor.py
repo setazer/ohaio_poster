@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import logging
 import time
 from functools import wraps
@@ -90,7 +91,11 @@ def check_recommendations(new_tag=None):
             last_id = tag.last_check
             tag.missing_times = tag.missing_times or 0
             req = ses.get(tags_api.format(tag.tag) + '+-rating:explicit&limit=20', proxies=proxies)
-            posts = req.json()
+            try:
+                posts = req.json()
+            except json.decoder.JSONDecodeError as ex:
+                util.log_error(ex, tag)
+                posts = None
             if not posts:
                 tag.missing_times += 1
                 if tag.missing_times > 4:
