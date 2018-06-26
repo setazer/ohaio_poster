@@ -35,7 +35,7 @@ def main():
                     retval = func(*args, **kwargs)
                 except requests.exceptions.ConnectionError as exc:
                     time.sleep(err_wait[min(i, 5)])
-                except telebot.apihelper.ApiException as exc:
+                except (telebot.apihelper.ApiException, FileNotFoundError) as exc:
                     o_logger.error(exc)
                     util.log_error(exc, args, kwargs)
                     break
@@ -98,16 +98,26 @@ def main():
                                    disable_notification=disable_notification)
 
     @bot_action
-    def send_photo(chat_id, photo, caption=None, reply_to_message_id=None, reply_markup=None,
+    def send_photo(chat_id, photo_filename, caption=None, reply_to_message_id=None, reply_markup=None,
                    disable_notification=None):
-        return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, reply_to_message_id=reply_to_message_id,
-                              reply_markup=reply_markup,
-                              disable_notification=disable_notification)
+        with open(photo_filename, 'rb') as photo:
+            return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
+                                  reply_to_message_id=reply_to_message_id,
+                                  reply_markup=reply_markup,
+                                  disable_notification=disable_notification)
 
     @bot_action
     def answer_callback(callback_query_id, text=None, show_alert=None, url=None, cache_time=None):
         return bot.answer_callback_query(callback_query_id=callback_query_id, text=text, show_alert=show_alert, url=url,
                                          cache_time=cache_time)
+
+    @bot_action
+    def send_document(chat_id, data_filename, reply_to_message_id=None, caption=None, reply_markup=None,
+                      parse_mode=None, disable_notification=None, timeout=None):
+        with open(data_filename, 'rb') as data:
+            return bot.send_document(chat_id=chat_id, data=data, reply_to_message_id=reply_to_message_id,
+                                     caption=caption, reply_markup=reply_markup,
+                                     parse_mode=parse_mode, disable_notification=disable_notification, timeout=timeout)
 
     # bot main actions end
 
@@ -279,7 +289,7 @@ def main():
                         with Image.open(MONITOR_FOLDER + entry) as im:
                             (width, height) = im.size
 
-                        with open(MONITOR_FOLDER + entry, 'rb') as pic, session_scope() as session:
+                        with session_scope() as session:
                             pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
                             if not pic_item:
                                 (*_, authors, characters, copyrights) = grabber.get_metadata(service, post_id)
@@ -290,7 +300,7 @@ def main():
                                 session.add(pic_item)
                                 session.flush()
                                 session.refresh(pic_item)
-                            mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo=pic,
+                            mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo_filename=MONITOR_FOLDER + entry,
                                                  caption=f'ID: {post_id}\n{width}x{height}',
                                                  reply_markup=markup_templates.gen_rec_new_markup(pic_item.id, post_id))
                             pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
@@ -457,8 +467,7 @@ def main():
         o_logger.debug(f"{message.from_user.username} issued queue grid generation")
         util.generate_queue_image()
         o_logger.debug("Queue grid picture generation complete. Sending...")
-        with open(QUEUE_GEN_FILE, 'rb') as doc:
-            bot.send_document(message.chat.id, doc, caption="Очередь")
+        send_document(message.chat.id, data_filename=QUEUE_GEN_FILE, caption="Очередь")
 
     @bot.message_handler(commands=['delete'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)

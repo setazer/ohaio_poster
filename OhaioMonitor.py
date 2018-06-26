@@ -27,7 +27,7 @@ def bot_action(func):
                 retval = func(*args, **kwargs)
             except requests.exceptions.ConnectionError:
                 time.sleep(err_wait[min(i, 5)])
-            except telebot.apihelper.ApiException as exc:
+            except (telebot.apihelper.ApiException, FileNotFoundError) as exc:
                 o_logger.error(exc)
                 util.log_error(exc, args, kwargs)
                 break
@@ -46,24 +46,36 @@ def check_recommendations(new_tag=None):
     bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
     @bot_action
-    def send_message(*args, **kwargs):
-        return bot.send_message(*args, **kwargs)
+    def send_message(chat_id, text, disable_web_page_preview=None, reply_to_message_id=None, reply_markup=None,
+                     parse_mode=None, disable_notification=None):
+        return bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=disable_web_page_preview,
+                                reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
+                                parse_mode=parse_mode, disable_notification=disable_notification)
 
     @bot_action
-    def edit_message(*args, **kwargs):
-        return bot.edit_message_text(*args, **kwargs)
+    def edit_message(text, chat_id=None, message_id=None, inline_message_id=None, parse_mode=None,
+                     disable_web_page_preview=None, reply_markup=None):
+        return bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id,
+                                     inline_message_id=inline_message_id,
+                                     parse_mode=parse_mode,
+                                     disable_web_page_preview=disable_web_page_preview, reply_markup=reply_markup)
 
     @bot_action
-    def edit_markup(*args, **kwargs):
-        return bot.edit_message_reply_markup(*args, **kwargs)
+    def edit_markup(chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
+        return bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id,
+                                             inline_message_id=inline_message_id, reply_markup=reply_markup)
 
     @bot_action
-    def delete_message(*args, **kwargs):
-        return bot.delete_message(*args, **kwargs)
+    def delete_message(chat_id, message_id):
+        return bot.delete_message(chat_id=chat_id, message_id=message_id)
 
     @bot_action
-    def send_photo(*args, **kwargs):
-        return bot.send_photo(*args, **kwargs)
+    def send_photo(chat_id, photo_filename, caption=None, reply_to_message_id=None, reply_markup=None,
+                   parse_mode=None, disable_notification=None):
+        with open(photo_filename, 'rb') as photo:
+            return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
+                                  reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
+                                  parse_mode=parse_mode, disable_notification=disable_notification)
 
     telebot.apihelper.proxy = REQUESTS_PROXY
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
@@ -171,10 +183,9 @@ def check_recommendations(new_tag=None):
                     session.add(pic)
                     session.flush()
                     session.refresh(pic)
-                with open(MONITOR_FOLDER + new_post['pic_name'], 'rb') as picture:
-                    mon_msg = send_photo(TELEGRAM_CHANNEL_MON, picture,
+                mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                          f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
-                                         reply_markup=markup_templates.gen_rec_new_markup(pic.id, pic.post_id))
+                                     reply_markup=markup_templates.gen_rec_new_markup(pic.id, pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
                 if new_post['update_tag']:
