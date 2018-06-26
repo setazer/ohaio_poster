@@ -71,103 +71,103 @@ def check_recommendations(new_tag=None):
     edit_message("Получаю обновления тегов", srvc_msg.chat.id, srvc_msg.message_id)
     service = 'dan'
     with session_scope() as session:
-        pic = None
-        service_payload = service_db[service]['payload']
-        service_login = 'http://' + service_db[service]['login_url']
-        tags_api = 'http://' + service_db[service]['posts_api']
-        # post_api = 'https://' + service_db[service]['post_api']
-        new_posts = {}
-        proxies = REQUESTS_PROXY
-        with requests.Session() as ses:
-            ses.post(service_login, data=service_payload)
         queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
                  session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
         history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
                    session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
         tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
-        tags = session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
-            Tag).filter_by(service=service, tag=new_tag).all()
-        for (n, tag) in enumerate(tags, 1):
-            last_id = tag.last_check
-            tag.missing_times = tag.missing_times or 0
-            req = ses.get(tags_api.format(tag.tag) + '+-rating:explicit&limit=20', proxies=proxies)
+        tags = {item.tag: {'last_check': item.last_check, 'missing_times': item.missing_times} for item in (
+            session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
+                Tag).filter_by(service=service, tag=new_tag).all())}
+    service_payload = service_db[service]['payload']
+    service_login = 'http://' + service_db[service]['login_url']
+    tags_api = 'http://' + service_db[service]['posts_api']
+    # post_api = 'https://' + service_db[service]['post_api']
+    new_posts = {}
+    proxies = REQUESTS_PROXY
+    ses = requests.Session()
+    ses.post(service_login, data=service_payload)
+
+    for (n, (tag, tag_data)) in enumerate(tags.items(), 1):
+        last_id = tag_data.get('last_check') or 0
+        missing_times = tag_data.get('missing_times') or 0
+        req = ses.get(tags_api.format(tag) + '+-rating:explicit&limit=20', proxies=proxies)
+        try:
+            posts = req.json()
+        except json.decoder.JSONDecodeError as ex:
+            util.log_error(ex, kwargs={'tag': tag, 'text': req.text})
+            posts = None
+        if not posts:
+            missing_times += 1
+            if missing_times > 4:
+                send_message(srvc_msg.chat.id,
+                             f"У тега {tag} нет постов уже после {missing_times} проверок",
+                             reply_markup=markup_templates.gen_del_tag_markup(tag))
+            continue
+        else:
+            missing_times = 0
+        with session_scope() as session:
+            session.query(Tag).filter_by(tag=tag, service=service).first().missing_times = missing_times
+
+        qnh = queue + history
+        for post in posts:
             try:
-                posts = req.json()
-            except json.decoder.JSONDecodeError as ex:
-                util.log_error(ex, tag)
-                posts = None
-            if not posts:
-                tag.missing_times += 1
-                if tag.missing_times > 4:
-                    send_message(srvc_msg.chat.id,
-                                 f"У тега {tag.tag} нет постов уже после {tag.missing_times} проверок",
-                                 reply_markup=markup_templates.gen_del_tag_markup(tag.tag))
+                post_id = post['id']
+            except TypeError as ex:
+                util.log_error(ex, kwargs=posts)
+                o_logger.debug(ex)
+                o_logger.debug(posts)
+                break
+            skip = any(b_tag in post['tag_string'] for b_tag in BANNED_TAGS)
+            if skip or not any([post.get('large_file_url'), post.get('file_url')]): continue
+            if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
                 continue
-            else:
-                tag.missing_times = 0
-            qnh = queue + history
-            for post in posts:
-                try:
-                    post_id = post['id']
-                except TypeError as ex:
-                    util.log_error(ex, kwargs=posts)
-                    o_logger.debug(ex)
-                    o_logger.debug(posts)
-                    break
-                skip = False
-                for b_tag in BANNED_TAGS:
-                    if b_tag in post['tag_string']:
-                        skip = True
-                        break
-                if not any([post.get('large_file_url'), post.get('file_url')]) or skip: continue
-                if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
-                    continue
-                if post_id > last_id:
-                    pic_item = session.query(Pic).filter_by(service=service, post_id=str(post_id)).first()
-                    if pic_item:
-                        pic = {'item': pic_item, 'new': False}
-                    else:
-                        pic = {'item': Pic(service=service, post_id=post_id,
-                                           authors=' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
-                                           chars=' '.join({f"#{x.split('_(')[0]}" for x in
-                                                           post.get('tag_string_character').split()}),
-                                           copyright=' '.join({f'#{x}'.replace('_(series)', '') for x in
-                                                               post['tag_string_copyright'].split()})), 'new': True}
-                    new_posts[post_id] = {'tag': tag.tag, 'sample_url': post['file_url'],
-                                          'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
-                                          'dimensions': f"{post['image_height']}x{post['image_width']}"
-                        , 'pic': pic}
-            else:
-                tag.last_check = int(posts[0]['id'])
-            if (n % 5) == 0:
-                edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                            reply_markup=markup_templates.gen_status_markup(
-                                f"{tag.tag} [{n}/{tags_total}]",
-                                f"Новых постов: {len(new_posts)}"))
-        edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
-        srt_new_posts = sorted(new_posts)
-        for (n, post_id) in enumerate(srt_new_posts, 1):
+            if post_id > last_id:
+                new_posts[str(post_id)] = {
+                    'authors': ' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
+                    'chars': ' '.join({f"#{x.split('_(')[0]}" for x in
+                                       post.get('tag_string_character').split()}),
+                    'copyright': ' '.join({f'#{x}'.replace('_(series)', '') for x in
+                                           post['tag_string_copyright'].split()}),
+                    'tag': tag, 'sample_url': post['file_url'],
+                    'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
+                    'dimensions': f"{post['image_height']}x{post['image_width']}", 'update_tag': post_id > last_id}
+        if (n % 5) == 0:
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                         reply_markup=markup_templates.gen_status_markup(
-                            f"Новых постов: {len(new_posts)}",
-                            f"Обработка поста: {n}/{len(srt_new_posts)}"))
-            new_post = new_posts[post_id]
-            if (new_post['file_url'] or new_post['sample_url']):
-                pic_ext = new_post['file_ext']
-                pic_name = f"{service}.{post_id}.{pic_ext}"
-            else:
-                pic_name = ''
-            dl_url = grabber.get_less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
-            if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
-                new_posts[post_id]['pic_name'] = pic_name
-            else:
-                new_posts[post_id]['pic_name'] = None
-        edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
-        for post_id in srt_new_posts:
-            new_post = new_posts[post_id]
-            if new_post['pic_name']:
-                pic = new_post['pic']['item']
-                if new_post['pic']['new']:
+                            f"{tag} [{n}/{tags_total}]",
+                            f"Новых постов: {len(new_posts)}"))
+    edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
+    srt_new_posts = sorted(new_posts)
+    for (n, post_id) in enumerate(srt_new_posts, 1):
+        edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                    reply_markup=markup_templates.gen_status_markup(
+                        f"Новых постов: {len(new_posts)}",
+                        f"Обработка поста: {n}/{len(srt_new_posts)}"))
+        new_post = new_posts[post_id]
+        if new_post['file_url'] or new_post['sample_url']:
+            pic_ext = new_post['file_ext']
+            pic_name = f"{service}.{post_id}.{pic_ext}"
+        else:
+            pic_name = ''
+        dl_url = grabber.get_less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
+        if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
+            new_posts[post_id]['pic_name'] = pic_name
+        else:
+            new_posts[post_id]['pic_name'] = None
+    edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
+    for post_id in srt_new_posts:
+        new_post = new_posts[post_id]
+        if new_post['pic_name']:
+            with session_scope() as session:
+                pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+                if not pic:
+                    pic = Pic(
+                        service=service,
+                        post_id=post_id,
+                        authors=new_post['authors'],
+                        chars=new_post['chars'],
+                        copyright=new_post['copyright'])
                     session.add(pic)
                     session.flush()
                     session.refresh(pic)
@@ -177,8 +177,10 @@ def check_recommendations(new_tag=None):
                                          reply_markup=markup_templates.gen_rec_new_markup(pic.id, pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
-                session.merge(pic)
-        delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+                if new_post['update_tag']:
+                    session.query(Tag).filter_by(tag=new_post['tag'],
+                                                 service=service).first().last_check = int(post_id)
+    delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
 def repost_previous_monitor_check(bot: telebot.TeleBot):
