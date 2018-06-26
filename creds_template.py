@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # VK config
-from os import getcwd
+from os import getcwd, makedirs
+from os.path import join as path_join
 VK_TOKEN = ''
 VK_LOGIN= ''
 VK_PASS= ''
@@ -33,8 +34,10 @@ OWNER_ROOM_ID = 0 # bot owner telegram id
 WEBHOOK_HOST = 'host.name'
 WEBHOOK_PORT = 8443 # 80/443/88/8443
 WEBHOOK_LISTEN = '0.0.0.0'
-WEBHOOK_SSL_CERT = getcwd()+'/webhook_cert.pem' # Generate it with "openssl genrsa -out webhook_pkey.pem 2048"
-WEBHOOK_SSL_PRIV = getcwd()+'/webhook_pkey.pem' # Generate it with "openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem"
+WEBHOOK_SSL_CERT = path_join(getcwd(),
+                             'webhook_cert.pem')  # Generate it with "openssl genrsa -out webhook_pkey.pem 2048"
+WEBHOOK_SSL_PRIV = path_join(getcwd(),
+                             'webhook_pkey.pem')  # Generate it with "openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem"
 WEBHOOK_URL_BASE = f"https://{WEBHOOK_HOST}:{WEBHOOK_PORT}"
 WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
 
@@ -43,12 +46,15 @@ REQUESTS_PROXY = {}
 #    "http": "proxy.antizapret.prostovpn.org:3128",
 #    "https": "proxy.antizapret.prostovpn.org:3128"
 # }
-MONITOR_FOLDER = getcwd()+'/pics/mon/'
-QUEUE_FOLDER = getcwd()+'/pics/q/'
+MONITOR_FOLDER = path_join(getcwd(), 'pics', 'mon', '')
+makedirs(MONITOR_FOLDER, exist_ok=True)
+QUEUE_FOLDER = path_join(getcwd(), 'pics', 'q', '')
+makedirs(QUEUE_FOLDER, exist_ok=True)
 LOG_FILE = 'Ohaio.log'
 SERVICE_DEFAULT = 'dan'
-ERROR_LOGS_DIR = getcwd()+'/errlogs/'
-QUEUE_GEN_FILE = getcwd()+'/queue_grid.png'
+ERROR_LOGS_DIR = path_join(getcwd(), 'errlogs', '')
+makedirs(ERROR_LOGS_DIR, exist_ok=True)
+QUEUE_GEN_FILE = path_join(getcwd(), 'queue_grid.png')
 BANNED_TAGS = ['comic'] # OhaioMonitor banned tags (danbooru api doesnt allow requests for more tan 2 tags, workaround)
 service_db = {'gel':{'name':'Gelbooru',
                      'post_url':'gelbooru.com/index.php?page=post&s=view&id=',

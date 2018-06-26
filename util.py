@@ -16,8 +16,6 @@ from db_mng import Tag, Pic, QueueItem, MonitorItem, Setting, session_scope
 
 
 def log_error(exception, args=[], kwargs={}):
-    if not os.path.exists(ERROR_LOGS_DIR):
-        os.makedirs(ERROR_LOGS_DIR)
     with open(ERROR_LOGS_DIR + time.strftime('%Y%m%d_%H%M%S') + ".txt", 'a') as err_file:
         if args:
             err_file.write("ARGS: " + str(args) + "\n")
