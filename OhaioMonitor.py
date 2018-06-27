@@ -176,9 +176,16 @@ def check_recommendations(new_tag=None):
                     tags[tag]['missing_times'] = 0
                 db_tag = session.query(Tag).filter_by(tag=tag, service=service).first()
                 if tag_aliases.get(tag):
-                    db_tag.tag = tag_aliases[tag]
-                    send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
-                db_tag.missing_times = tags[tag]['missing_times']
+                    new_tag = session.query(Tag).filter_by(tag=tag_aliases[tag], service=service).first()
+                    if new_tag:
+                        session.delete(db_tag)
+                        new_tag.missing_times = tags[tag]['missing_times']
+                        send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
+                    else:
+                        db_tag.tag = tag_aliases[tag]
+                        db_tag.missing_times = tags[tag]['missing_times']
+                        send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
+
     edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
     srt_new_posts = sorted(new_posts)
     for (n, post_id) in enumerate(srt_new_posts, 1):
