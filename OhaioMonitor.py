@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from functools import wraps
+from urllib.parse import quote
 
 import requests
 import telebot
@@ -102,8 +103,9 @@ def check_recommendations(new_tag=None):
     ses = requests.Session()
     tags_slices = [list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5)]
     for (n, tags_slice) in enumerate(tags_slices, 1):
+        tag_aliases = {}
         req = ses.get(tags_api.format('+'.join(
-            ['~' + tag for tag in tags_slice])) + f'+-rating:explicit&login={login}&api_key={api_key}&limit=200',
+            ['~' + quote(tag) for tag in tags_slice])) + f'+-rating:explicit&login={login}&api_key={api_key}&limit=200',
                       proxies=proxies)
         try:
             posts = req.json()
@@ -124,8 +126,27 @@ def check_recommendations(new_tag=None):
             if skip or no_urls: continue
             if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
                 continue
-            # get particular author tag in case post have multiple
-            post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
+            if tag_aliases:
+                for tag, alias in tag_aliases.items():
+                    post['tag_string_artist'].replace(alias, tag)
+            try:
+                # get particular author tag in case post have multiple
+                post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
+            except KeyError:  # post artist not in  checking slice - means database have artist old alias
+                artist_api = 'http://' + service_db[service]['artist_api']
+                stop = False
+                for artist in post['tag_string_artist'].split():
+                    artist_data = ses.get(artist_api.format(artist), proxies=proxies).json()[0]
+                    for tag in tags_slice:
+                        if tag in artist_data['other_names']:
+                            tag_aliases[tag] = artist
+                            post_tag = tag
+                            stop = True
+                            break
+                    if stop:
+                        break
+
+
             if (new_post_count[post_tag] < max_new_posts_per_tag and
                     post_id > tags[post_tag].get('last_check')):
                 new_post_count[post_tag] += 1
@@ -154,6 +175,9 @@ def check_recommendations(new_tag=None):
                 else:
                     tags[tag]['missing_times'] = 0
                 db_tag = session.query(Tag).filter_by(tag=tag, service=service).first()
+                if tag_aliases.get(tag):
+                    db_tag.tag = tag_aliases[tag]
+                    send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
                 db_tag.missing_times = tags[tag]['missing_times']
     edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
     srt_new_posts = sorted(new_posts)
