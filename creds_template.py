@@ -3,8 +3,6 @@
 from os import getcwd, makedirs
 from os.path import join as path_join
 VK_TOKEN = ''
-VK_LOGIN= ''
-VK_PASS= ''
 VK_GROUP_ID = '123456' # https://vk.com/club123456
 VK_APP_ID = '123456'
 
