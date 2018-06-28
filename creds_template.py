@@ -2,6 +2,7 @@
 # VK config
 from os import getcwd, makedirs
 from os.path import join as path_join
+
 VK_TOKEN = ''
 VK_GROUP_ID = '123456' # https://vk.com/club123456
 VK_APP_ID = '123456'
@@ -53,7 +54,8 @@ SERVICE_DEFAULT = 'dan'
 ERROR_LOGS_DIR = path_join(getcwd(), 'errlogs', '')
 makedirs(ERROR_LOGS_DIR, exist_ok=True)
 QUEUE_GEN_FILE = path_join(getcwd(), 'queue_grid.png')
-BANNED_TAGS = ['comic'] # OhaioMonitor banned tags (danbooru api doesnt allow requests for more tan 2 tags, workaround)
+BANNED_TAGS = ['comic', 'loli',
+               'shota']  # OhaioMonitor banned tags (danbooru api doesnt allow requests for more tan 2 tags, workaround)
 service_db = {'gel':{'name':'Gelbooru',
                      'post_url':'gelbooru.com/index.php?page=post&s=view&id=',
                      'post_api':'gelbooru.com/index.php?page=dapi&s=post&q=index&id=',
@@ -69,6 +71,7 @@ service_db = {'gel':{'name':'Gelbooru',
                       'post_url': 'danbooru.donmai.us/posts/',
                       'post_api': 'danbooru.donmai.us/posts/{}.json',
                       'posts_api': 'danbooru.donmai.us/posts.json?tags={}',
+                      'tag_alias_api': 'danbooru.donmai.us/tag_aliases.json?search[name_matches]={}',
                       'tag_api': '',
                       'login_url': 'danbooru.donmai.us/session/new',
                       'payload': {'user': 'username',

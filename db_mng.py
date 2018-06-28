@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 from sqlalchemy import Column, Integer, String, Boolean, Sequence, UniqueConstraint, PrimaryKeyConstraint, ForeignKey
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -111,9 +112,15 @@ class HistoryItem(Base):
 # conn_string = "postgresql://{user}:{password}@{host}:{port}/{db}".format(user=DB_USER, password=DB_PASSWORD,
 #                                                                          host=DB_HOST,
 #                                                                          port=DB_PORT, db=DB_NAME)
-conn_string = f"mysql+mysqldb://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(conn_string)
-Base.metadata.create_all(engine)
+try:
+    conn_string = f"mysql+mysqldb://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    engine = create_engine(conn_string)
+    Base.metadata.create_all(engine)
+except OperationalError:
+    conn_string = "sqlite:///local.db"
+    engine = create_engine(conn_string)
+    Base.metadata.create_all(engine)
+
 Session = sessionmaker(bind=engine)
 
 

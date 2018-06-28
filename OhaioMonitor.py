@@ -133,19 +133,26 @@ def check_recommendations(new_tag=None):
                 # get particular author tag in case post have multiple
                 post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
             except KeyError:  # post artist not in  checking slice - means database have artist old alias
-                artist_api = 'http://' + service_db[service]['artist_api']
+                tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
                 stop = False
                 for artist in post['tag_string_artist'].split():
-                    artist_data = ses.get(artist_api.format(artist), proxies=proxies).json()[0]
+                    tag_alias = [item for item in ses.get(tag_aliases_api.format(artist), proxies=proxies).json() if
+                                 item['status'] == 'active']
+                    if not tag_alias:
+                        continue
                     for tag in tags_slice:
-                        if tag in artist_data['other_names']:
+                        if tag in tag_alias[0]['antecedent_name']:
                             tag_aliases[tag] = artist
                             post_tag = tag
                             stop = True
                             break
                     if stop:
                         break
-
+                else:
+                    send_message(srvc_msg.chat.id,
+                                 f'Алиас тега для поста {service}:{post_id} с авторами "{post["tag_string_artist"]}" не найден.\n'
+                                 f'Должен быть один из: {", ".join(tags_slice)}')
+                    break
 
             if (new_post_count[post_tag] < max_new_posts_per_tag and
                     post_id > tags[post_tag].get('last_check')):
