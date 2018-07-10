@@ -8,7 +8,7 @@ import telebot
 
 import markup_templates
 import util
-from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER
+from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, QUEUE_LIMIT
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope
 
@@ -78,7 +78,7 @@ def main(log):
                 o_logger.error(ex)
                 util.log_error(ex)
                 wall_id = -1
-        elif queue_len > 144:
+        elif queue_len > QUEUE_LIMIT:
             wall_id = -1
         else:
             return

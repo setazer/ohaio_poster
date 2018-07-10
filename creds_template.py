@@ -41,6 +41,7 @@ WEBHOOK_URL_BASE = f"https://{WEBHOOK_HOST}:{WEBHOOK_PORT}"
 WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
 
 # Misc
+QUEUE_LIMIT = 240
 REQUESTS_PROXY = {}
 #    "http": "proxy.antizapret.prostovpn.org:3128",
 #    "https": "proxy.antizapret.prostovpn.org:3128"
