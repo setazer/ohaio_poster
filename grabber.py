@@ -2,6 +2,7 @@
 import os
 
 import requests
+from PIL import Image
 from bs4 import BeautifulSoup
 
 import util
@@ -113,4 +114,14 @@ def download(url, filename):
             #     edit_markup(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
             #                 reply_markup=markup_templates.gen_progress(done))
             #     start = time.clock()
+    try:
+        im = Image.open(filename)
+    except OSError:
+        return False
+    aspect = im.height / im.width
+    if not (3 >= aspect >= 0.3):
+        os.remove(filename)
+        return False
+    im.thumbnail((2000, 2000))
+    im.save(filename)
     return True
