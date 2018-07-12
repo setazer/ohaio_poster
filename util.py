@@ -94,9 +94,9 @@ def refill_history():
                                     post_n = post_str[len(service_db[service]['post_url']) + offset:].strip()
                                     if post_n.isdigit() and (service, post_n) not in post_history:
                                         post_history[(service, post_n)] = post['id']
-                                        db_post_history = HistoryItem(service=service, post_id=post_n,
-                                                                      wall_id=post['id'])
-                                        session.add(db_post_history)
+                                        new_pic = Pic(post_id=post_n, service=service)
+                                        new_pic.history_item = HistoryItem(wall_id=post['id'])
+                                        session.add(new_pic)
             time.sleep(0.4)
 
 def get_current_album():
