@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
-import time
-from functools import wraps
 from urllib.parse import quote
 
 import requests
@@ -12,71 +10,13 @@ from sqlalchemy.orm import joinedload
 import grabber
 import markup_templates
 import util
-from creds import LOG_FILE, TELEGRAM_TOKEN, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
+from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message
+from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
     MONITOR_FOLDER
 from db_mng import Tag, QueueItem, HistoryItem, Pic, MonitorItem, session_scope
 
-err_wait = [1, 5, 15, 30, 60, 300]
-
-
-def bot_action(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        retval = None
-        for i in range(20):
-            try:
-                retval = func(*args, **kwargs)
-            except requests.exceptions.ConnectionError:
-                time.sleep(err_wait[min(i, 5)])
-            except (telebot.apihelper.ApiException, FileNotFoundError) as exc:
-                o_logger.error(exc)
-                util.log_error(exc, args, kwargs)
-                break
-            except Exception as exc:
-                o_logger.error(exc)
-                util.log_error(exc, args, kwargs)
-                time.sleep(err_wait[min(i, 3)])
-            else:
-                break
-        return retval
-
-    return wrapper
-
 
 def check_recommendations(new_tag=None):
-    bot = telebot.TeleBot(TELEGRAM_TOKEN)
-
-    @bot_action
-    def send_message(chat_id, text, disable_web_page_preview=None, reply_to_message_id=None, reply_markup=None,
-                     parse_mode=None, disable_notification=None):
-        return bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=disable_web_page_preview,
-                                reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
-                                parse_mode=parse_mode, disable_notification=disable_notification)
-
-    @bot_action
-    def edit_message(text, chat_id=None, message_id=None, inline_message_id=None, parse_mode=None,
-                     disable_web_page_preview=None, reply_markup=None):
-        return bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id,
-                                     inline_message_id=inline_message_id,
-                                     parse_mode=parse_mode,
-                                     disable_web_page_preview=disable_web_page_preview, reply_markup=reply_markup)
-
-    @bot_action
-    def edit_markup(chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
-        return bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id,
-                                             inline_message_id=inline_message_id, reply_markup=reply_markup)
-
-    @bot_action
-    def delete_message(chat_id, message_id):
-        return bot.delete_message(chat_id=chat_id, message_id=message_id)
-
-    @bot_action
-    def send_photo(chat_id, photo_filename, caption=None, reply_to_message_id=None, reply_markup=None,
-                   parse_mode=None, disable_notification=None):
-        with open(photo_filename, 'rb') as photo:
-            return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
-                                  reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
-                                  parse_mode=parse_mode, disable_notification=disable_notification)
 
     telebot.apihelper.proxy = REQUESTS_PROXY
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
@@ -241,22 +181,14 @@ def repost_previous_monitor_check(bot: telebot.TeleBot):
     with session_scope() as session:
         mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
         for mon_item in mon_items:
-            try:
-                bot.delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
-            except telebot.apihelper.ApiException as exc:
-                o_logger.error(exc)
-                util.log_error(exc)
-            try:
-                new_msg = bot.send_photo(TELEGRAM_CHANNEL_MON, photo=mon_item.pic.file_id,
-                                         caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
-                                                 f"ID: {mon_item.pic.post_id}",
-                                         reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
-                                                                                          mon_item.pic.post_id))
-            except telebot.apihelper.ApiException as exc:
-                o_logger.error(exc)
-                util.log_error(exc)
-                continue
-            mon_item.tele_msg = new_msg.message_id
+            delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
+            new_msg = send_photo(TELEGRAM_CHANNEL_MON, photo=mon_item.pic.file_id,
+                                 caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
+                                         f"ID: {mon_item.pic.post_id}",
+                                 reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
+                                                                                  mon_item.pic.post_id))
+            if new_msg:
+                mon_item.tele_msg = new_msg.message_id
 
 
 if __name__ == '__main__':

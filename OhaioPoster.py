@@ -8,7 +8,8 @@ import telebot
 
 import markup_templates
 import util
-from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, QUEUE_LIMIT
+from bot_mng import send_photo, send_message
+from creds import TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, QUEUE_LIMIT
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope
 
@@ -44,7 +45,7 @@ def add_to_history(new_post, wall_id):
 def main(log):
     telebot.apihelper.proxy = REQUESTS_PROXY
     vk_posting_times = [(55, 60), (0, 5), (25, 35)]
-    bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
     log.debug('Checking queue for new posts')
     new_post = check_queue()
     if not new_post:
@@ -86,30 +87,21 @@ def main(log):
     add_to_history(new_post, wall_id)
     log.debug('Posting to Telegram')
     if file_id:
-        try:
-            bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=file_id, caption=tel_msg,
-                           reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
-        except Exception as ex:
-            o_logger.error(ex)
-            util.log_error(ex)
+        send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=file_id, caption=tel_msg,
+                   reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
     else:
-        with open(QUEUE_FOLDER + new_post['pic_name'], 'rb') as pic_file:
-            try:
-                bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=pic_file, caption=tel_msg,
-                               reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
-            except Exception as ex:
-                o_logger.error(ex)
-                util.log_error(ex)
+        send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=QUEUE_FOLDER + new_post['pic_name'], caption=tel_msg,
+                   reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
     try:
         util.post_to_tumblr(new_post)
     except Exception as ex:
         o_logger.error(ex)
         util.log_error(ex)
     os.remove(QUEUE_FOLDER + new_post['pic_name'])
-    bot.send_message(new_post['sender'],
+    send_message(new_post['sender'],
                      f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     if new_post['sender'] != OWNER_ROOM_ID:
-        bot.send_message(OWNER_ROOM_ID,
+        send_message(OWNER_ROOM_ID,
                          f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     log.debug('Posting finished')
     util.update_header()

@@ -2,18 +2,14 @@
 import json
 
 import cherrypy
-import telebot
 import vk_requests
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-import util
-from creds import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_VKUPDATES, REQUESTS_PROXY, VK_GROUP_ID, VK_TOKEN
+from bot_mng import send_message
+from creds import TELEGRAM_CHANNEL_VKUPDATES, VK_GROUP_ID, VK_TOKEN
 
 WEBHOOK_LISTEN = '0.0.0.0'
 WEBHOOK_PORT = 8237
-telebot.apihelper.proxy = REQUESTS_PROXY
-bot = telebot.TeleBot(TELEGRAM_TOKEN, False)
-
 
 class WebhookServer(object):
     @cherrypy.expose
@@ -29,18 +25,6 @@ class WebhookServer(object):
             return process_request(json_string)
         else:
             raise cherrypy.HTTPError(403)
-
-
-def send_message(chat_id, text, disable_web_page_preview=None, reply_to_message_id=None, reply_markup=None,
-                 parse_mode=None, disable_notification=None):
-    try:
-        msg = bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=disable_web_page_preview,
-                               reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
-                               parse_mode=parse_mode, disable_notification=disable_notification)
-    except Exception as ex:
-        util.log_error(ex)
-        return None
-    return msg
 
 
 def process_request(json_string):

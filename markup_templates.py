@@ -9,12 +9,6 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from creds import VK_GROUP_ID, service_db
 
 
-def gen_progress(progress):
-    prog_markup = InlineKeyboardMarkup()
-    prog_markup.add(InlineKeyboardButton(text=f"{progress:.2f}%", callback_data='progress'))
-    return prog_markup
-
-
 def gen_post_link(wall_id):
     if wall_id == -1:
         return None
@@ -22,7 +16,6 @@ def gen_post_link(wall_id):
     link_markup = InlineKeyboardMarkup()
     link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=link))
     return link_markup
-
 
 def gen_user_markup(user):
     user_markup = InlineKeyboardMarkup()
@@ -32,6 +25,13 @@ def gen_user_markup(user):
     user_markup.row(InlineKeyboardButton("Забанить", callback_data=f"user_block{user}"))
     return user_markup
 
+
+def gen_rebuild_history_markup():
+    rebuild_history_markup = InlineKeyboardMarkup()
+    rebuild_history_markup.row_width = 2
+    rebuild_history_markup.add(InlineKeyboardButton("✅ Да", callback_data=f"rh_yes"),
+                               InlineKeyboardButton("❌ Нет", callback_data=f"rh_no"))
+    return rebuild_history_markup
 
 def gen_status_markup(*args):
     status_markup = InlineKeyboardMarkup()
@@ -87,18 +87,6 @@ def gen_channel_inline(new_post, wall_id):
         buttons.append(InlineKeyboardButton(text="Пост в ВК", url=vk_link))
     channel_markup.add(*buttons)
     return channel_markup
-
-
-rec_finish_markup = InlineKeyboardMarkup()
-rec_finish_markup.add(InlineKeyboardButton(text="Завершить обработку рекомендаций", callback_data="rec_finish"))
-
-post_markup = InlineKeyboardMarkup()
-post_markup.row_width = 2
-buttons = []
-for service in service_db:
-    buttons.append(InlineKeyboardButton(service_db[service]['name'], callback_data=service))
-post_markup.add(*buttons)
-
 
 class InlinePaginator():
     def __init__(self, msg, data, items_per_row=5, max_rows=5):
@@ -210,7 +198,5 @@ class InlinePaginator():
 def emojize_number(num):
     digits = {'0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣',
               '8': '8️⃣', '9': '9️⃣'}
-    result = ''
-    for char in str(num):
-        result += digits[char]
+    result = ''.join(digits[char] for char in str(num))
     return result

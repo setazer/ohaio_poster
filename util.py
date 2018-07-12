@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from sqlalchemy import and_
 
 from creds import *
-from db_mng import Tag, Pic, QueueItem, MonitorItem, Setting, session_scope
+from db_mng import Tag, Pic, QueueItem, MonitorItem, Setting, session_scope, HistoryItem
 
 
 def log_error(exception, args=[], kwargs={}):
@@ -60,49 +60,44 @@ def post_to_tumblr(new_post):
                        caption=msg)
 
 
-# def refill_history():
-#     with session_scope() as session:
-#         api = vk_requests.create_api(APP_ID, VK_LOGIN, VK_PASS, scope=['wall', 'photos'], v=5.62)
-#         postsnum = api.wall.get(owner_id="-" + GROUP_ID)['count']
-#         max_queries = (postsnum - 1) // 100
-#         post_history = {}
-#         for querynum in range(max_queries + 1):
-#             posts = api.wall.get(owner_id="-" + GROUP_ID, offset=querynum * 100, count=100)['items']
-#             for post in posts:
-#                 if contains(service_db, lambda x: service_db[x]['post_url'] in post['text']):
-#                     links = post['text'].split()
-#                     for link in links:
-#                         if contains(service_db, lambda x: service_db[x]['post_url'] in link):
-#                             service = list_entry(service_db, lambda x: service_db[x]['post_url'] in link)
-#                             offset = link.find(service_db[service]['post_url'])
-#                             post_n = link[len(service_db[service]['post_url']) + offset:].strip()
-#                             if post_n.isdigit() and not (service, post_n) in post_history:
-#                                 post_history[(service, post_n)] = post['id']
-#                                 new_pic = Pic(post_id=post_n, service=service)
-#                                 new_pic.history_item = HistoryItem(wall_id=post['id'])
-#                                 session.add(new_pic)
-#
-#                 if post.get('attachments'):
-#                     for att in post['attachments']:
-#                         if att['type'] == 'link':
-#                             if contains(service_db, lambda x: service_db[x]['post_url'] in att['link']['url']):
-#                                 linkstr = list(att['link']['url'].split('http')[1:])
-#                                 for post_str in linkstr:
-#                                     service = list_entry(service_db, lambda x: service_db[x]['post_url'] in post_str)
-#                                     offset = post_str.find(service_db[service]['post_url'])
-#                                     post_n = post_str[len(service_db[service]['post_url']) + offset:].strip()
-#                                     if post_n.isdigit() and not (service, post_n) in post_history:
-#                                         post_history[(service, post_n)] = post['id']
-#                                         pg_post_history = HistoryItem(service=service, post_id=post_n,
-#                                                                       wall_id=post['id'])
-#                                         session.add(pg_post_history)
-#             time.sleep(0.4)
-#         print(list(post_history.keys()))
-#         last_re_post = api.wall.search(owner_id="-" + GROUP_ID, query='post', count=1)
-#         last_repost = last_re_post['items'][0]['id']
-#         rep_count = last_re_post['count']
-#         session.merge(Setting(setting='last_repost',value=last_repost))
-#         session.merge(Setting(setting='rep_count',value=rep_count))
+def refill_history():
+    with session_scope() as session:
+        api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
+        postsnum = api.wall.get(owner_id="-" + VK_GROUP_ID)['count']
+        max_queries = (postsnum - 1) // 100
+        post_history = {}
+        for querynum in range(max_queries + 1):
+            posts = api.wall.get(owner_id="-" + VK_GROUP_ID, offset=querynum * 100, count=100)['items']
+            for post in posts:
+                if any(service_db[x]['post_url'] in post['text'] for x in service_db):
+                    links = post['text'].split()
+                    for link in links:
+                        if any(service_db[x]['post_url'] in link for x in service_db):
+                            service = next(service for service in service_db if service_db[service]['post_url'] in link)
+                            offset = link.find(service_db[service]['post_url'])
+                            post_n = link[len(service_db[service]['post_url']) + offset:].strip()
+                            if post_n.isdigit() and (service, post_n) not in post_history:
+                                post_history[(service, post_n)] = post['id']
+                                new_pic = Pic(post_id=post_n, service=service)
+                                new_pic.history_item = HistoryItem(wall_id=post['id'])
+                                session.add(new_pic)
+
+                if post.get('attachments'):
+                    for att in post['attachments']:
+                        if att['type'] == 'link':
+                            if any(service_db[x]['post_url'] in att['link']['url'] for x in service_db):
+                                linkstr = att['link']['url'].split(r'://')[1:]
+                                for post_str in linkstr:
+                                    service = next(service for service in service_db if
+                                                   service_db[service]['post_url'] in post_str)
+                                    offset = post_str.find(service_db[service]['post_url'])
+                                    post_n = post_str[len(service_db[service]['post_url']) + offset:].strip()
+                                    if post_n.isdigit() and (service, post_n) not in post_history:
+                                        post_history[(service, post_n)] = post['id']
+                                        db_post_history = HistoryItem(service=service, post_id=post_n,
+                                                                      wall_id=post['id'])
+                                        session.add(db_post_history)
+            time.sleep(0.4)
 
 def get_current_album():
     with session_scope() as session:

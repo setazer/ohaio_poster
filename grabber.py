@@ -29,9 +29,7 @@ def get_metadata(service, post_id, pic_name=None):
             tags = BeautifulSoup(tag_page.text, 'lxml').find_all('tag')
             authors = ' '.join(['#' + x['name'] for x in tags
                                 if x['type'] == '1' and x['name'] != '' and x['name'] != 'artist_request'])
-            characters = ' '.join(['#' + x['name'][
-                                         :len(x['name']) if not '_(' in x['name'] else x['name'].find(
-                                             '_(')] for x in tags
+            characters = ' '.join(['#' + x.split('_(')[0] for x in tags
                                    if x['type'] == '4' and x['name'] != '' and x[
                                        'name'] != 'character_request'])
             copyrights = ' '.join(['#' + x['name'].replace('_(series)', '') for x in tags

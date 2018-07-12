@@ -8,7 +8,6 @@ from functools import wraps
 
 import cherrypy
 import dateutil.relativedelta as rd
-import requests
 import telebot
 from PIL import Image
 from sqlalchemy.orm import joinedload
@@ -17,6 +16,8 @@ import grabber
 import markup_templates
 import util
 from OhaioMonitor import check_recommendations
+from bot_mng import bot, send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, \
+    send_document
 # Испорт рег. данных
 from creds import *
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
@@ -25,29 +26,6 @@ from util import valid_artist_name
 
 
 def main():
-    # wrappers
-    def bot_action(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            retval = None
-            for i in range(20):
-                try:
-                    retval = func(*args, **kwargs)
-                except requests.exceptions.ConnectionError as exc:
-                    time.sleep(err_wait[min(i, 5)])
-                except (telebot.apihelper.ApiException, FileNotFoundError) as exc:
-                    o_logger.error(exc)
-                    util.log_error(exc, args, kwargs)
-                    break
-                except Exception as exc:
-                    o_logger.error(exc)
-                    util.log_error(exc, args, kwargs)
-                    time.sleep(err_wait[min(i, 3)])
-                else:
-                    break
-            return retval
-
-        return wrapper
 
     def access(access_number=0):
         def decorator(func):
@@ -65,62 +43,6 @@ def main():
 
         return decorator
 
-    # wrappers end
-
-    # bot main actions
-    @bot_action
-    def send_message(chat_id, text, disable_web_page_preview=None, reply_to_message_id=None, reply_markup=None,
-                     parse_mode=None, disable_notification=None):
-        return bot.send_message(chat_id=chat_id, text=text, disable_web_page_preview=disable_web_page_preview,
-                                reply_to_message_id=reply_to_message_id, reply_markup=reply_markup,
-                                parse_mode=parse_mode, disable_notification=disable_notification)
-
-    @bot_action
-    def edit_message(text, chat_id=None, message_id=None, inline_message_id=None, parse_mode=None,
-                     disable_web_page_preview=None, reply_markup=None):
-        return bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id,
-                                     inline_message_id=inline_message_id,
-                                     parse_mode=parse_mode,
-                                     disable_web_page_preview=disable_web_page_preview, reply_markup=reply_markup)
-
-    @bot_action
-    def edit_markup(chat_id=None, message_id=None, inline_message_id=None, reply_markup=None):
-        return bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id,
-                                             inline_message_id=inline_message_id, reply_markup=reply_markup)
-
-    @bot_action
-    def delete_message(chat_id, message_id):
-        return bot.delete_message(chat_id=chat_id, message_id=message_id)
-
-    @bot_action
-    def forward_message(chat_id, from_chat_id, message_id, disable_notification=None):
-        return bot.forward_message(chat_id=chat_id, from_chat_id=from_chat_id, message_id=message_id,
-                                   disable_notification=disable_notification)
-
-    @bot_action
-    def send_photo(chat_id, photo_filename, caption=None, reply_to_message_id=None, reply_markup=None,
-                   disable_notification=None):
-        with open(photo_filename, 'rb') as photo:
-            return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
-                                  reply_to_message_id=reply_to_message_id,
-                                  reply_markup=reply_markup,
-                                  disable_notification=disable_notification)
-
-    @bot_action
-    def answer_callback(callback_query_id, text=None, show_alert=None, url=None, cache_time=None):
-        return bot.answer_callback_query(callback_query_id=callback_query_id, text=text, show_alert=show_alert, url=url,
-                                         cache_time=cache_time)
-
-    @bot_action
-    def send_document(chat_id, data_filename, reply_to_message_id=None, caption=None, reply_markup=None,
-                      parse_mode=None, disable_notification=None, timeout=None):
-        with open(data_filename, 'rb') as data:
-            return bot.send_document(chat_id=chat_id, data=data, reply_to_message_id=reply_to_message_id,
-                                     caption=caption, reply_markup=reply_markup,
-                                     parse_mode=parse_mode, disable_notification=disable_notification, timeout=timeout)
-
-    # bot main actions end
-
     def load_users():
         nonlocal users
         o_logger.debug("Loading users")
@@ -133,8 +55,8 @@ def main():
     def save_users():
         with session_scope() as session:
             for user in users:
-                pg_user = User(user_id=user, access=users[user])
-                session.merge(pg_user)
+                db_user = User(user_id=user, access=users[user])
+                session.merge(db_user)
         o_logger.debug("Users saved")
 
     def say_to_owner(text):
@@ -155,16 +77,13 @@ def main():
     o_ch.setLevel(logging.ERROR)
     o_logger.addHandler(o_fh)
     o_logger.addHandler(o_ch)
-    telebot.apihelper.proxy = REQUESTS_PROXY
-    bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
     next_steps = {}
     paginators = {}
     o_logger.debug("Initializing bot")
     users = {}
-    # curjob = 1
-    # job_queue = 0
     load_users()
-    err_wait = [1, 5, 15, 30, 60, 300]
+
     error_msg = None
     shutting_down = False
     up_time = dt.datetime.fromtimestamp(time.time())
@@ -187,7 +106,6 @@ def main():
                 length = int(cherrypy.request.headers['content-length'])
                 json_string = cherrypy.request.body.read(length).decode("utf-8")
                 update = telebot.types.Update.de_json(json_string)
-                # Эта функция обеспечивает проверку входящего сообщения
                 bot.process_new_updates([update])
                 return ''
             else:
@@ -195,7 +113,7 @@ def main():
 
     @bot.message_handler(commands=['start'])
     def start(message):
-        if not message.chat.id in users:
+        if message.chat.id not in users:
             send_message(message.chat.id, "Привет! Заявка на регистрацию отправлена администратору.")
             send_message(OWNER_ROOM_ID,
                          f"Новый пользователь: {message.from_user.username} ({message.chat.id})",
@@ -273,17 +191,6 @@ def main():
                     elif (service, post_id) in history:
                         o_logger.debug(f"{entry} in history")
                         os.remove(MONITOR_FOLDER + entry)
-                    # elif (service, post_id) in monitor:
-                    #     o_logger.debug("{} in monitor".format(entry))
-                    #     with Image.open(entry) as im:
-                    #         (width, height) = im.size
-                    #     with open(entry, 'rb') as pic,session_scope() as session:
-                    #         mon_item = session.query(MonitorItem).join(Pic).filter_by(service=service,post_id=post_id).first()
-                    #         mon_msg = send_photo(TELEGRAM_CHANNEL_MON, pic,
-                    #                        'ID: {}\n{}x{}'.format(post_id, width, height),
-                    #                        reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic_id,post_id, mon_item.to_del))
-                    #         mon_item.tele_msg = mon_msg.message_id
-                    #         session.merge(mon_item)
                     else:
                         o_logger.debug(f"{entry} not found, recreating")
                         with Image.open(MONITOR_FOLDER + entry) as im:
@@ -322,7 +229,6 @@ def main():
     @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data and bool(users.get(call.from_user.id)))
     @access(1)
     def callback_query(call):
-        # nonlocal curjob
         if call.data.startswith("user_allow"):
             user = int(call.data[len("user_allow"):])
             users[user] = 1
@@ -355,8 +261,6 @@ def main():
                     mon_item.to_del = checked
                 edit_markup(call.message.chat.id, call.message.message_id,
                             reply_markup=markup_templates.gen_rec_new_markup(id, post_id, checked))
-
-
             elif call.data.startswith("rec_finish"):
                 answer_callback(call.id, "Обработка началась")
 
@@ -368,7 +272,6 @@ def main():
                         MonitorItem.id <= mon_id).all()
                     o_logger.debug(f"{call.from_user.username} finished recommendations check")
                     prog_msg = send_message(chat_id=call.from_user.id, text="Обработка монитора")
-                    # text=f"Пикча ID {item.pic.post_id} ({service_db[item.pic.service]['name']}) перенесена в очередь.")
                     deleted = {service_db[key]['name']: [] for key in service_db}
                     added = {service_db[key]['name']: [] for key in service_db}
                     deleted['count'] = added['count'] = 0
@@ -388,7 +291,6 @@ def main():
                             session.delete(item)
                             added['count'] = added['count'] + 1
                             added[service_db[item.pic.service]['name']].append(item.pic.post_id)
-
                         if i % 5 == 0:
                             edit_markup(prog_msg.chat.id, prog_msg.message_id,
                                         reply_markup=markup_templates.gen_status_markup(
@@ -442,9 +344,17 @@ def main():
                 service = 'dan'
                 msg = bot.send_message(call.message.chat.id, "Тег на замену:")
                 next_steps[call.from_user.id] = (service, tag)
-                bot.register_next_step_handler(msg, rename_tag_reciever)
+                bot.register_next_step_handler(msg, rename_tag_receiver)
+        elif call.data.startswith("rh"):
+            if call.data.startswith("rh_yes"):
+                with session_scope() as session:
+                    session.query(HistoryItem).delete()
+                util.refill_history()
+                send_message(call.message.chat.id, "История перезаполнена.")
+            elif call.data.startswith("rh_no"):
+                delete_message(call.message.chat.id, call.message.message_id)
 
-    def rename_tag_reciever(message):
+    def rename_tag_receiver(message):
         new_tag = message.text
         if not valid_artist_name(new_tag):
             send_message(message.chat.id, "Невалидное имя для тега!")
@@ -458,7 +368,7 @@ def main():
             del next_steps[message.from_user.id]
         else:
             send_message(message.chat.id,
-                         "Бот почему-то ожидал ответа на переименование тега, но данных об заменяемом теге нет.")
+                         "Бот почему-то ожидал ответа на переименование тега, но данных о заменяемом теге нет.")
 
     @bot.message_handler(commands=['queue'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
@@ -471,7 +381,6 @@ def main():
 
     @bot.message_handler(commands=['delete'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
-    # @wait_for_job("Delete", False)
     def delete_queue(message):
         with session_scope() as session:
             queue = [(queue_item.id, f"{queue_item.pic.service}:{queue_item.pic.post_id}") for queue_item in
@@ -487,15 +396,11 @@ def main():
         else:
             send_message(message.chat.id, "Очередь пуста.")
 
-    # @bot.message_handler(commands=['rebuild_history'])
-    # @access(2)
-    # # @wait_for_job("Rebuild history")
-    # def rebuild_history(message):
-    #     with session_scope() as session:
-    #         session.query(QueueItem).delete()
-    #         session.query(HistoryItem).delete()
-    #     util.refill_history()
-    #     send_message(message.chat.id, "История перезаполнена.")
+    @bot.message_handler(commands=['rebuild_history'], func=lambda m: bool(users.get(m.chat.id)))
+    @access(2)
+    def rebuild_history(message):
+        send_message(message.chat.id, "ВЫ АБСОЛЮТНО ТОЧНО В ЭТОМ УВЕРЕНЫ?!",
+                     reply_markup=markup_templates.gen_rebuild_history_markup())
 
     @bot.message_handler(commands=['broadcast'], func=lambda m: bool(users.get(m.chat.id)))
     @access(2)
@@ -587,7 +492,6 @@ def main():
         else:
             send_message(message.chat.id, "Не распарсил.")
 
-    # @wait_for_job("Post")
     def queue_picture(sender, service, post_id):
         with session_scope() as session:
             pics_total = session.query(QueueItem).count()
