@@ -1,0 +1,11 @@
+beautifulsoup4==4.6.0
+CherryPy==14.2.0
+DateTime==4.2
+lxml==4.2.1
+mysqlclient==1.3.12
+Pillow==5.1.0
+pyTelegramBotAPI==3.6.2
+requests==2.18.4
+requests-oauthlib==0.8.0
+SQLAlchemy==1.2.7
+vk-requests==1.1.1
