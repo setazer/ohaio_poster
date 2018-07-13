@@ -2,14 +2,19 @@
 import argparse
 import datetime as dt
 import logging
+import math
 import os
+import re
 import time
 from functools import wraps
 
 import cherrypy
 import dateutil.relativedelta as rd
+import pixivpy3
+import requests
 import telebot
-from PIL import Image
+import vk_requests
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 from sqlalchemy.orm import joinedload
 
 import grabber
@@ -18,11 +23,9 @@ import util
 from OhaioMonitor import check_recommendations
 from bot_mng import bot, send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, \
     send_document
-# Испорт рег. данных
 from creds import *
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
 from markup_templates import InlinePaginator
-from util import valid_artist_name
 
 
 def main():
@@ -199,7 +202,7 @@ def main():
                         with session_scope() as session:
                             pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
                             if not pic_item:
-                                (*_, authors, characters, copyrights) = grabber.get_metadata(service, post_id)
+                                (*_, authors, characters, copyrights) = grabber.metadata(service, post_id)
                                 pic_item = Pic(service=service, post_id=post_id,
                                                authors=authors,
                                                chars=characters,
@@ -209,7 +212,8 @@ def main():
                                 session.refresh(pic_item)
                             mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo_filename=MONITOR_FOLDER + entry,
                                                  caption=f'ID: {post_id}\n{width}x{height}',
-                                                 reply_markup=markup_templates.gen_rec_new_markup(pic_item.id, post_id))
+                                                 reply_markup=markup_templates.gen_rec_new_markup(pic_item.id, service,
+                                                                                                  post_id))
                             pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
         send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
@@ -225,6 +229,76 @@ def main():
 
     def dead_paginator(call):
         del paginators[(call.message.chat.id, call.message.message_id)]
+
+    def refill_history():
+        with session_scope() as session:
+            api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
+            postsnum = api.wall.get(owner_id="-" + VK_GROUP_ID)['count']
+            max_queries = (postsnum - 1) // 100
+            post_history = {}
+            for querynum in range(max_queries + 1):
+                posts = api.wall.get(owner_id="-" + VK_GROUP_ID, offset=querynum * 100, count=100)['items']
+                for post in posts:
+                    if any(service_db[x]['post_url'] in post['text'] for x in service_db):
+                        links = post['text'].split()
+                        for link in links:
+                            if any(service_db[x]['post_url'] in link for x in service_db):
+                                service = next(
+                                    service for service in service_db if service_db[service]['post_url'] in link)
+                                offset = link.find(service_db[service]['post_url'])
+                                post_n = link[len(service_db[service]['post_url']) + offset:].strip()
+                                if post_n.isdigit() and (service, post_n) not in post_history:
+                                    post_history[(service, post_n)] = post['id']
+                                    new_pic = Pic(post_id=post_n, service=service)
+                                    new_pic.history_item = HistoryItem(wall_id=post['id'])
+                                    session.add(new_pic)
+
+                    if post.get('attachments'):
+                        for att in post['attachments']:
+                            if att['type'] == 'link':
+                                if any(service_db[x]['post_url'] in att['link']['url'] for x in service_db):
+                                    linkstr = att['link']['url'].split(r'://')[1:]
+                                    for post_str in linkstr:
+                                        service = next(service for service in service_db if
+                                                       service_db[service]['post_url'] in post_str)
+                                        offset = post_str.find(service_db[service]['post_url'])
+                                        post_n = post_str[len(service_db[service]['post_url']) + offset:].strip()
+                                        if post_n.isdigit() and (service, post_n) not in post_history:
+                                            post_history[(service, post_n)] = post['id']
+                                            new_pic = Pic(post_id=post_n, service=service)
+                                            new_pic.history_item = HistoryItem(wall_id=post['id'])
+                                            session.add(new_pic)
+                time.sleep(0.4)
+
+    def get_artist_suggestions(tag, service):
+        suggestions = {}
+        service_artist_api = 'http://' + service_db[service]['artist_api']
+        service_login = 'http://' + service_db[service]['login_url']
+        service_payload = service_db[service]['payload']
+        proxies = REQUESTS_PROXY
+        with requests.Session() as ses:
+            ses.headers = {'user-agent': 'OhaioPoster/{0}'.format('0.0.0.1'),
+                           'content-type': 'application/json; charset=utf-8'}
+            ses.post(service_login, data=service_payload)
+            response = ses.get(service_artist_api.format(tag), proxies=proxies).json()
+            for artist in response:
+                suggestions[artist['name']] = artist['other_names']
+        return suggestions
+
+    def valid_artist_name(name):
+        pat = re.compile(r'[\w()-]*$')
+        return pat.match(name)
+
+    def move_back_to_mon():
+        with session_scope() as session:
+            mon_items = session.query(MonitorItem).all()
+            q_items = [item.pic_name for item in session.query(QueueItem).all()]
+            for mon_item in mon_items:
+                if not os.path.exists(MONITOR_FOLDER + mon_item.pic_name):
+                    if os.path.exists(QUEUE_FOLDER + mon_item.pic_name) and not mon_item.pic_name in q_items:
+                        os.rename(QUEUE_FOLDER + mon_item.pic_name, MONITOR_FOLDER + mon_item.pic_name)
+                    else:
+                        session.delete(mon_item)
 
     @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data and bool(users.get(call.from_user.id)))
     @access(1)
@@ -257,15 +331,16 @@ def main():
                     o_logger.debug(f"Marked {id} for deletion by {call.from_user.username}")
                     mon_item = session.query(MonitorItem).filter_by(pic_id=id).first()
                     checked = not mon_item.to_del
+                    service = mon_item.pic.service
                     post_id = mon_item.pic.post_id
                     mon_item.to_del = checked
                 edit_markup(call.message.chat.id, call.message.message_id,
-                            reply_markup=markup_templates.gen_rec_new_markup(id, post_id, checked))
+                            reply_markup=markup_templates.gen_rec_new_markup(id, service, post_id, checked))
             elif call.data.startswith("rec_finish"):
                 answer_callback(call.id, "Обработка началась")
 
                 id = call.data[len("rec_finish"):]
-                util.move_back_to_mon()  # just in case last check failed for some reason
+                move_back_to_mon()  # just in case last check failed for some reason
                 with session_scope() as session:
                     mon_id = session.query(MonitorItem).filter_by(pic_id=id).first().id
                     mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(
@@ -312,7 +387,7 @@ def main():
             elif call.data.startswith("rec_fix"):
                 tag = call.data[len("rec_fix"):]
                 service = 'dan'
-                alter_names = util.get_artist_suggestions(tag, service)
+                alter_names = get_artist_suggestions(tag, service)
                 msg = ""
                 if alter_names:
                     msg += "Найдены возможные замены:\n"
@@ -349,7 +424,7 @@ def main():
             if call.data.startswith("rh_yes"):
                 with session_scope() as session:
                     session.query(HistoryItem).delete()
-                util.refill_history()
+                refill_history()
                 send_message(call.message.chat.id, "История перезаполнена.")
             elif call.data.startswith("rh_no"):
                 delete_message(call.message.chat.id, call.message.message_id)
@@ -370,12 +445,50 @@ def main():
             send_message(message.chat.id,
                          "Бот почему-то ожидал ответа на переименование тега, но данных о заменяемом теге нет.")
 
+    def pil_grid(images):
+        n_images = len(images)
+        max_per_line = math.ceil(math.sqrt(n_images))
+        max_lines = math.ceil(n_images / max_per_line)
+        im_grid = Image.new('RGB', (max_per_line * 128, max_lines * 128), color='white')
+        draw = ImageDraw.Draw(im_grid)
+        font = ImageFont.truetype("VISITOR_RUS.TTF", 15)
+        for i, im in enumerate(images):
+            x = (i % max_per_line) * 128
+            y = (i // max_per_line) * 128
+            im_grid.paste(im, (x, y))
+            tx = x + 3
+            ty = y + 110
+            # outline
+            draw.text((tx - 1, ty), str(i + 1), (0, 0, 0), font=font)
+            draw.text((tx + 1, ty), str(i + 1), (0, 0, 0), font=font)
+            draw.text((tx, ty - 1), str(i + 1), (0, 0, 0), font=font)
+            draw.text((tx, ty + 1), str(i + 1), (0, 0, 0), font=font)
+            # text
+            draw.text((tx, ty), str(i + 1), (255, 255, 255), font=font)
+        return im_grid
+
+    def generate_queue_image():
+        with session_scope() as session:
+            queue = session.query(QueueItem).order_by(QueueItem.id).all()
+            images = []
+            for q_item in queue:
+                try:
+                    im = Image.open(QUEUE_FOLDER + q_item.pic_name)
+                except Exception:
+                    thumb = Image.open('corrupted.jpg')
+                else:
+                    size = 128, 128
+                    thumb = ImageOps.fit(im, size, Image.ANTIALIAS)
+                images.append(thumb)
+        grid = pil_grid(images)
+        grid.save(QUEUE_GEN_FILE)
+
     @bot.message_handler(commands=['queue'], func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
     def check_queue(message):
         bot.send_chat_action(message.chat.id, 'upload_photo')
         o_logger.debug(f"{message.from_user.username} issued queue grid generation")
-        util.generate_queue_image()
+        generate_queue_image()
         o_logger.debug("Queue grid picture generation complete. Sending...")
         send_document(message.chat.id, data_filename=QUEUE_GEN_FILE, caption="Очередь")
 
@@ -472,23 +585,85 @@ def main():
             list_of_links = [x.strip() for x in filter(None, message.text.split())]
             for link in list_of_links:
                 try:
-                    service, post_url = \
-                        [(service, service_data['post_url']) for service, service_data in service_db.items() if
-                         service_data['post_url'] in link][0]
-                except IndexError:
+                    service, post_url = next((service, data['post_url']) for service, data in service_db.items() if
+                                             data['post_url'] in link)
+                except StopIteration:
                     continue
 
                 offset = link.find(post_url)
-                question_cut = link.find('?') if link.find('?') != -1 and link.find('?') > offset else None
+                question_cut = link.find('?') if link.find('?') != -1 and link.find('?') > offset + len(
+                    post_url) else None
                 post_number = link[len(post_url) + offset:question_cut].strip()
                 if post_number.isdigit():
                     o_logger.debug(
                         f"Found ID: {post_number} Service: {service_db[service]['name']}")
-                    queue_picture(message.from_user, service, post_number)
+                    if service == "pix":
+                        # pixiv stores pictures WAY different than booru sites, so exceptional behavior
+                        post_illust_to_mon(message.from_user, post_number)
+                    else:
+                        queue_picture(message.from_user, service, post_number)
                 else:
                     send_message(message.chat.id, f"Не распарсил: {post_number}")
         else:
             send_message(message.chat.id, "Не распарсил.")
+
+    def post_illust_to_mon(sender, post_id):
+        service = 'pix'
+        with session_scope() as session:
+            queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
+                     session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
+            history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
+                       session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
+            monitor = [(monitor_item.pic.service, monitor_item.pic.post_id) for monitor_item in
+                       session.query(MonitorItem).options(joinedload(MonitorItem.pic)).all()]
+        qhm = queue + history + monitor
+        api = pixivpy3.AppPixivAPI()
+        api.login(service_db['pix']['payload']['user'],
+                  service_db['pix']['payload']['pass'])
+        req = api.illust_detail(int(post_id))
+        if req:
+            pixiv_msg = send_message(chat_id=sender.id, text="Получены данные о работе, скачивание пикч")
+            new_posts = {}
+            illustrations_urls = [item['image_urls']['original'] for item in req['illust']['meta_pages']]
+            total = len(illustrations_urls)
+            for idx, url in enumerate(illustrations_urls):
+                post_id = os.path.splitext(os.path.basename(url))[0]
+                if (service, post_id) in qhm:
+                    continue
+
+                pic_name = 'pix.' + os.path.basename(url)
+                edit_markup(pixiv_msg.chat.id, pixiv_msg.message_id,
+                            reply_markup=markup_templates.gen_status_markup(f"{idx}/{total}"))
+                if grabber.download(url, MONITOR_FOLDER + pic_name):
+                    new_posts[post_id] = {'pic_name': pic_name, 'authors': req['illust']['user']['account'],
+                                          'chars': '', 'copyright': ''}
+            if not new_posts:
+                edit_message("Нет пикч для добавления. Возможно все пикчи с данной ссылки уже были.", pixiv_msg.chat.id,
+                             pixiv_msg.message_id)
+                return
+            edit_message("Выкладываю пикчи в монитор", pixiv_msg.chat.id, pixiv_msg.message_id)
+            for post_id in new_posts:
+                new_post = new_posts[post_id]
+                if new_post['pic_name']:
+                    with session_scope() as session:
+                        pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+                        if not pic:
+                            pic = Pic(
+                                service=service,
+                                post_id=post_id,
+                                authors=new_post['authors'],
+                                chars=new_post['chars'],
+                                copyright=new_post['copyright'])
+                            session.add(pic)
+                            session.flush()
+                            session.refresh(pic)
+                        mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
+                                             f"#{new_post['authors']} ID: {post_id}",
+                                             reply_markup=markup_templates.gen_rec_new_markup(pic.id, service,
+                                                                                              pic.post_id))
+                        pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
+                        pic.file_id = mon_msg.photo[0].file_id
+            delete_message(pixiv_msg.chat.id, pixiv_msg.message_id)
 
     def queue_picture(sender, service, post_id):
         with session_scope() as session:
@@ -496,7 +671,6 @@ def main():
             pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
                 service=service, post_id=post_id).first()
             if pic:
-                new_pic = pic
                 if pic.queue_item:
                     send_message(sender.id, f"ID {post_id} ({service_db[service]['name']}) уже в очереди!")
                     return
@@ -514,7 +688,7 @@ def main():
                                       f"Всего пикч: {pics_total+1}.")
                     return
             o_logger.debug("Getting post info")
-            (pic_name, direct, authors, characters, copyrights) = grabber.get_metadata(service, post_id)
+            (pic_name, direct, authors, characters, copyrights) = grabber.metadata(service, post_id)
             if not direct:
                 send_message(sender.id, "Скачивание пикчи не удалось. Забаненный пост?")
                 return

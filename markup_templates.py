@@ -49,7 +49,7 @@ def gen_del_tag_markup(tag):
     return del_tag_markup
 
 
-def gen_rec_new_markup(id, post_id, checked=False):
+def gen_rec_new_markup(id, service, post_id, checked=False):
     rec_new_markup = InlineKeyboardMarkup()
     to_del = "❎" if not checked else "❌"
     rec_new_markup.row_width = 2
@@ -57,7 +57,7 @@ def gen_rec_new_markup(id, post_id, checked=False):
         InlineKeyboardButton(text=f"{to_del} Удалить", callback_data=f"rec_del{id} {random.randint(1,1000000)}"),
         InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
         InlineKeyboardButton(text="Оригинал",
-                             url=rf"http://danbooru.donmai.us/posts/{post_id}"))
+                             url="".join(["https://", service_db[service]['post_url'], post_id])))
     return rec_new_markup
 
 

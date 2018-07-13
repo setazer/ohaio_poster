@@ -77,7 +77,14 @@ service_db = {'gel':{'name':'Gelbooru',
                       'login_url': 'danbooru.donmai.us/session/new',
                       'payload': {'user': 'username',
                                   'api_key': 'API_key',
-                                  'commit':'Submit'}}}
+                                  'commit': 'Submit'}},
+              'pix': {'name': 'Pixiv',
+                      'author_url': 'www.pixiv.net/member.php?id=',
+                      'base_url': 'www.pixiv.net',
+                      'post_url': 'www.pixiv.net/member_illust.php?mode=medium&illust_id=',
+                      'payload': {'user': 'username',
+                                  'pass': 'passWORD'}}
+              }
               # 'new': {'name': '',
               #         'post_url': '',
               #         'post_api': '',

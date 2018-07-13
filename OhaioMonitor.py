@@ -146,7 +146,7 @@ def check_recommendations(new_tag=None):
             pic_name = f"{service}.{post_id}.{pic_ext}"
         else:
             pic_name = ''
-        dl_url = grabber.get_less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
+        dl_url = grabber.less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
         if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
             new_posts[post_id]['pic_name'] = pic_name
         else:
@@ -169,7 +169,7 @@ def check_recommendations(new_tag=None):
                     session.refresh(pic)
                 mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                          f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
-                                     reply_markup=markup_templates.gen_rec_new_markup(pic.id, pic.post_id))
+                                     reply_markup=markup_templates.gen_rec_new_markup(pic.id, service, pic.post_id))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 pic.file_id = mon_msg.photo[0].file_id
                 session.query(Tag).filter_by(tag=new_post['tag'],
@@ -186,6 +186,7 @@ def repost_previous_monitor_check():
                                  caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
                                          f"ID: {mon_item.pic.post_id}",
                                  reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
+                                                                                  mon_item.pic.service,
                                                                                   mon_item.pic.post_id))
             if new_msg:
                 mon_item.tele_msg = new_msg.message_id

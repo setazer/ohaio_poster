@@ -2,6 +2,7 @@
 import os
 
 import requests
+# import imagehash
 from PIL import Image
 from bs4 import BeautifulSoup
 
@@ -9,7 +10,14 @@ import util
 from creds import service_db, REQUESTS_PROXY
 
 
-def get_metadata(service, post_id, pic_name=None):
+# def hash(image_file):
+#     return imagehash.average_hash(Image.open(image_file))
+#
+# def hash_diff(hash1:imagehash.ImageHash,hash2:imagehash.ImageHash):
+#     return (hash1-hash2)/(hash1.hash)**2
+
+
+def metadata(service, post_id, pic_name=None):
     if service == 'gel':
         service_api = 'https://' + service_db[service]['post_api']
         service_tag_api = 'https://' + service_db[service]['tag_api']
@@ -54,7 +62,7 @@ def get_metadata(service, post_id, pic_name=None):
                                    response['tag_string_copyright'].split()})
             characters = ' '.join({f"#{x.split('_(')[0]}" for x in
                                    response['tag_string_character'].split()})
-            direct = get_less_sized_url(response['large_file_url'], response['file_url'], service=service)
+            direct = less_sized_url(response['large_file_url'], response['file_url'], service=service)
             pic_ext = response['file_ext']
             pic_name = f"{service}.{post_id}.{pic_ext}"
     else:
@@ -66,10 +74,10 @@ def get_metadata(service, post_id, pic_name=None):
     return (pic_name, direct, authors, characters, copyrights)
 
 
-def get_less_sized_url(*urls, service):
+def less_sized_url(*urls, service):
     sizes = {}
     for url in urls:
-        url = make_usable_url(url, service)
+        url = usable_url(url, service)
         req = requests.get(url, stream=True, proxies=REQUESTS_PROXY)
         req_size = req.headers.get('content-length')
         if req_size:
@@ -78,7 +86,7 @@ def get_less_sized_url(*urls, service):
     return least_sized
 
 
-def make_usable_url(url, service):
+def usable_url(url, service):
     if url.startswith('//'):
         url = "https:" + url
     elif url.startswith("/"):
@@ -87,10 +95,13 @@ def make_usable_url(url, service):
 
 
 def download(url, filename):
-    make_usable_url(url, os.path.basename(filename).split('.')[0])
+    service = os.path.basename(filename).split('.')[0]
+    usable_url(url, service)
     proxies = REQUESTS_PROXY
-    headers = {'user-agent': 'OhaioPoster',
-               'content-type': 'application/json; charset=utf-8'}
+    headers = {'user-agent': 'OhaioPoster'}
+    if service == 'pix':
+        headers['Referer'] = 'https://app-api.pixiv.net/'
+        proxies = {}
     try:
         req = requests.get(url, stream=True, proxies=proxies, headers=headers)
     except requests.exceptions.RequestException as ex:
@@ -101,24 +112,12 @@ def download(url, filename):
         return True
     if not total_length:  # no content length header
         return False
-    with open(filename, 'wb') as f:
-        # dl = 0
-        # start = time.clock()
-        for chunk in req.iter_content(1024):
-            f.write(chunk)
-            # dl += len(chunk)
-            # done = int(100 * dl / int(total_length))
-            # if (time.clock() - start) > 1:
-            #     edit_markup(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
-            #                 reply_markup=markup_templates.gen_progress(done))
-            #     start = time.clock()
     try:
-        im = Image.open(filename)
+        im = Image.open(req.raw)
     except OSError:
         return False
     aspect = im.height / im.width
     if not (3 >= aspect >= 0.3):
-        os.remove(filename)
         return False
     im.thumbnail((2000, 2000))
     im.save(filename)
