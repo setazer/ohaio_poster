@@ -20,7 +20,7 @@ def check_recommendations(new_tag=None):
 
     telebot.apihelper.proxy = REQUESTS_PROXY
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
-    repost_previous_monitor_check(bot)
+    repost_previous_monitor_check()
     edit_message("Получаю обновления тегов", srvc_msg.chat.id, srvc_msg.message_id)
     service = 'dan'
     with session_scope() as session:
@@ -177,7 +177,7 @@ def check_recommendations(new_tag=None):
     delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
-def repost_previous_monitor_check(bot: telebot.TeleBot):
+def repost_previous_monitor_check():
     with session_scope() as session:
         mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
         for mon_item in mon_items:
