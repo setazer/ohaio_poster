@@ -433,16 +433,14 @@ def main():
 
         with session_scope() as session:
             rec_tag = session.query(Tag).filter_by(tag=tag, service='dan').first()
-            if not rec_tag:
-                rec_tag = Tag(tag=tag, service='dan', last_check=last_check, missing_times=0)
-                session.add(rec_tag)
-                send_message(message.chat.id, text="Тег добавлен")
-                check_monitor = True
-            else:
-                send_message(message.chat.id, text="Тег уже есть")
-                check_monitor = False
-        if check_monitor:
+        if not rec_tag:
+            rec_tag = Tag(tag=tag, service='dan', last_check=last_check, missing_times=0)
+            session.add(rec_tag)
+            send_message(message.chat.id, text="Тег добавлен")
             check_recommendations(tag)
+        else:
+            send_message(message.chat.id, text="Тег уже есть")
+
 
     @bot.message_handler(func=lambda m: bool(users.get(m.chat.id)))
     @access(1)
