@@ -1,3 +1,4 @@
+import os
 import time
 from functools import wraps
 
@@ -75,8 +76,14 @@ def forward_message(chat_id, from_chat_id, message_id, disable_notification=None
 @bot_action
 def send_photo(chat_id, photo_filename, caption=None, reply_to_message_id=None, reply_markup=None,
                disable_notification=None):
-    with open(photo_filename, 'rb') as photo:
-        return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
+    if os.path.exists(photo_filename):
+        with open(photo_filename, 'rb') as photo:
+            return bot.send_photo(chat_id=chat_id, photo=photo, caption=caption,
+                                  reply_to_message_id=reply_to_message_id,
+                                  reply_markup=reply_markup,
+                                  disable_notification=disable_notification)
+    else:
+        return bot.send_photo(chat_id=chat_id, photo=photo_filename, caption=caption,
                               reply_to_message_id=reply_to_message_id,
                               reply_markup=reply_markup,
                               disable_notification=disable_notification)
@@ -91,9 +98,13 @@ def answer_callback(callback_query_id, text=None, show_alert=None, url=None, cac
 @bot_action
 def send_document(chat_id, data_filename, reply_to_message_id=None, caption=None, reply_markup=None,
                   parse_mode=None, disable_notification=None, timeout=None):
-    with open(data_filename, 'rb') as data:
-        return bot.send_document(chat_id=chat_id, data=data, reply_to_message_id=reply_to_message_id,
+    if os.path.exists(data_filename):
+        with open(data_filename, 'rb') as data:
+            return bot.send_document(chat_id=chat_id, data=data, reply_to_message_id=reply_to_message_id,
+                                     caption=caption, reply_markup=reply_markup,
+                                     parse_mode=parse_mode, disable_notification=disable_notification, timeout=timeout)
+    else:
+        return bot.send_document(chat_id=chat_id, data=data_filename, reply_to_message_id=reply_to_message_id,
                                  caption=caption, reply_markup=reply_markup,
                                  parse_mode=parse_mode, disable_notification=disable_notification, timeout=timeout)
-
 # bot main actions end
