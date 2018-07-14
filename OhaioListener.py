@@ -621,7 +621,7 @@ def main():
         api.login(service_db['pix']['payload']['user'],
                   service_db['pix']['payload']['pass'])
         req = api.illust_detail(int(post_id))
-        if req:
+        if not req.get('error', False):
             pixiv_msg = send_message(chat_id=sender.id, text="Получены данные о работе, скачивание пикч")
             new_posts = {}
             illustrations_urls = [item['image_urls']['original'] for item in req['illust']['meta_pages']]
@@ -664,6 +664,8 @@ def main():
                         pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                         pic.file_id = mon_msg.photo[0].file_id
             delete_message(pixiv_msg.chat.id, pixiv_msg.message_id)
+        else:
+            send_message(chat_id=sender.id, text="Ошибка при получении данных")
 
     def queue_picture(sender, service, post_id):
         with session_scope() as session:
