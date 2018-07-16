@@ -624,7 +624,10 @@ def main():
         if not req.get('error', False):
             pixiv_msg = send_message(chat_id=sender.id, text="Получены данные о работе, скачивание пикч")
             new_posts = {}
-            illustrations_urls = [item['image_urls']['original'] for item in req['illust']['meta_pages']]
+            if req['illust']['meta_pages']:
+                illustrations_urls = [item['image_urls']['original'] for item in req['illust']['meta_pages']]
+            else:
+                illustrations_urls = [item for item in req['illust']['meta_single_page'].values()]
             total = len(illustrations_urls)
             present_pics = []
             for idx, url in enumerate(illustrations_urls):
@@ -637,7 +640,7 @@ def main():
                 edit_markup(pixiv_msg.chat.id, pixiv_msg.message_id,
                             reply_markup=markup_templates.gen_status_markup(f"{idx}/{total}"))
                 if grabber.download(url, MONITOR_FOLDER + pic_name):
-                    new_posts[post_id] = {'pic_name': pic_name, 'authors': req['illust']['user']['account'],
+                    new_posts[post_id] = {'pic_name': pic_name, 'authors': "#" + req['illust']['user']['account'],
                                           'chars': '', 'copyright': ''}
                 else:
                     send_message(sender.id, f"Не удалось скачать {pic_name}")
@@ -664,7 +667,7 @@ def main():
                             session.flush()
                             session.refresh(pic)
                         mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
-                                             f"#{new_post['authors']} ID: {post_id}",
+                                             f"{new_post['authors']} ID: {post_id}",
                                              reply_markup=markup_templates.gen_rec_new_markup(pic.id, service,
                                                                                               pic.post_id))
                         pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
