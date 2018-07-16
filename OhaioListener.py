@@ -599,7 +599,7 @@ def main():
                         f"Found ID: {post_number} Service: {service_db[service]['name']}")
                     if service == "pix":
                         # pixiv stores pictures WAY different than booru sites, so exceptional behavior
-                        post_illust_to_mon(message.from_user, post_number)
+                        queue_pixiv_illust(message.from_user, post_number)
                     else:
                         queue_picture(message.from_user, service, post_number)
                 else:
@@ -607,7 +607,7 @@ def main():
         else:
             send_message(message.chat.id, "Не распарсил.")
 
-    def post_illust_to_mon(sender, post_id):
+    def queue_pixiv_illust(sender, post_id):
         service = 'pix'
         with session_scope() as session:
             queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
@@ -626,9 +626,11 @@ def main():
             new_posts = {}
             illustrations_urls = [item['image_urls']['original'] for item in req['illust']['meta_pages']]
             total = len(illustrations_urls)
+            present_pics = []
             for idx, url in enumerate(illustrations_urls):
                 post_id = os.path.splitext(os.path.basename(url))[0]
                 if (service, post_id) in qhm:
+                    present_pics.append(post_id)
                     continue
 
                 pic_name = 'pix.' + os.path.basename(url)
@@ -637,6 +639,10 @@ def main():
                 if grabber.download(url, MONITOR_FOLDER + pic_name):
                     new_posts[post_id] = {'pic_name': pic_name, 'authors': req['illust']['user']['account'],
                                           'chars': '', 'copyright': ''}
+                else:
+                    send_message(sender.id, f"Не удалось скачать {pic_name}")
+            if present_pics:
+                send_message(sender.id, f"Уже было: {', '.join(present_pics)}")
             if not new_posts:
                 edit_message("Нет пикч для добавления. Возможно все пикчи с данной ссылки уже были.", pixiv_msg.chat.id,
                              pixiv_msg.message_id)
