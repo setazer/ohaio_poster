@@ -182,7 +182,7 @@ def repost_previous_monitor_check():
         mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
         for mon_item in mon_items:
             delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
-            new_msg = send_photo(TELEGRAM_CHANNEL_MON, photo=mon_item.pic.file_id,
+            new_msg = send_photo(TELEGRAM_CHANNEL_MON, mon_item.pic.file_id,
                                  caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
                                          f"ID: {mon_item.pic.post_id}",
                                  reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
