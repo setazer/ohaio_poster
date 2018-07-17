@@ -130,7 +130,7 @@ def main():
                          f"Повторная регистрация: {message.from_user.username} ({message.chat.id})",
                          reply_markup=markup_templates.gen_user_markup(message.chat.id))
 
-    @bot.message_handler(commands=['stop'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['stop'], func=lambda m: m.chat.type == "private")
     @access(1)
     def stop(message):
         send_message(message.chat.id, "Регистрация отозвана.")
@@ -138,7 +138,7 @@ def main():
         users[message.chat.id] = 0
         save_users()
 
-    @bot.message_handler(commands=['shutdown'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['shutdown'], func=lambda m: m.chat.type == "private")
     @access(2)
     def shutdown(message):
         with session_scope() as session:
@@ -156,7 +156,7 @@ def main():
         shutting_down = True
         cherrypy.engine.exit()
 
-    @bot.message_handler(commands=['uptime'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['uptime'], func=lambda m: m.chat.type == "private")
     @access(1)
     def uptime(message):
         nonlocal up_time
@@ -168,7 +168,7 @@ def main():
         diff = ' '.join(human_readable(rd.relativedelta(cur_time, up_time)))
         send_message(message.chat.id, "Bot is running for: " + diff)
 
-    @bot.message_handler(commands=['remonitor'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
     @access(2)
     def refill_monitor(message):
         o_logger.debug("refill started")
@@ -300,7 +300,7 @@ def main():
                     else:
                         session.delete(mon_item)
 
-    @bot.callback_query_handler(func=lambda call: 'pag_' not in call.data and bool(users.get(call.from_user.id)))
+    @bot.callback_query_handler(func=lambda call: not call.data.startswith('pag_'))
     @access(1)
     def callback_query(call):
         if call.data.startswith("user_allow"):
@@ -483,7 +483,7 @@ def main():
         grid = pil_grid(images)
         grid.save(QUEUE_GEN_FILE)
 
-    @bot.message_handler(commands=['queue'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['queue'], func=lambda m: m.chat.type == "private")
     @access(1)
     def check_queue(message):
         bot.send_chat_action(message.chat.id, 'upload_photo')
@@ -492,7 +492,7 @@ def main():
         o_logger.debug("Queue grid picture generation complete. Sending...")
         send_document(message.chat.id, data_filename=QUEUE_GEN_FILE, caption="Очередь")
 
-    @bot.message_handler(commands=['delete'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['delete'], func=lambda m: m.chat.type == "private")
     @access(1)
     def delete_queue(message):
         with session_scope() as session:
@@ -509,13 +509,13 @@ def main():
         else:
             send_message(message.chat.id, "Очередь пуста.")
 
-    @bot.message_handler(commands=['rebuild_history'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['rebuild_history'], func=lambda m: m.chat.type == "private")
     @access(2)
     def rebuild_history(message):
         send_message(message.chat.id, "ВЫ АБСОЛЮТНО ТОЧНО В ЭТОМ УВЕРЕНЫ?!",
                      reply_markup=markup_templates.gen_rebuild_history_markup())
 
-    @bot.message_handler(commands=['broadcast'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['broadcast'], func=lambda m: m.chat.type == "private")
     @access(2)
     def broadcast_message(message):
         try:
@@ -530,7 +530,7 @@ def main():
                     send_message(user, msg)
         send_message(message.chat.id, text="Броадкаст отправлен.")
 
-    @bot.message_handler(commands=['add_tag'], func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(commands=['add_tag'], func=lambda m: m.chat.type == "private")
     @access(1)
     def add_recommendation_tag(message):
         try:
@@ -554,8 +554,7 @@ def main():
         else:
             send_message(message.chat.id, text="Тег уже есть")
 
-
-    @bot.message_handler(func=lambda m: bool(users.get(m.chat.id)))
+    @bot.message_handler(func=lambda m: m.chat.type == "private")
     @access(1)
     def got_new_message(message):
         o_logger.debug(f"Got new message: '{message.text}'")
