@@ -72,6 +72,8 @@ def main():
     o_logger = logging.getLogger('OhaioPosterLogger')
     o_logger.propagate = False
     o_logger.setLevel(logging.DEBUG if args.debugging else logging.INFO)
+    if args.debugging:
+        telebot.logger.setLevel(logging.DEBUG)
     o_fh = logging.FileHandler(LOG_FILE)
     o_fh.setLevel(logging.DEBUG)
     o_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [Listener] %(message)s"))
