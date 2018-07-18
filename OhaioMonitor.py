@@ -19,9 +19,11 @@ from db_mng import Tag, QueueItem, HistoryItem, Pic, MonitorItem, session_scope
 def check_recommendations(new_tag=None):
 
     telebot.apihelper.proxy = REQUESTS_PROXY
-    srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
-    repost_previous_monitor_check()
-    edit_message("Получаю обновления тегов", srvc_msg.chat.id, srvc_msg.message_id)
+    if not new_tag:
+        repost_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+        repost_previous_monitor_check()
+        delete_message(repost_msg.chat.id, repost_msg.message_id)
+    srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
     service = 'dan'
     with session_scope() as session:
         queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
