@@ -52,7 +52,7 @@ def main():
         with session_scope() as session:
             users = {user: access for user, access in session.query(User.user_id, User.access).all()}
         if not users:
-            users = {OWNER_ROOM_ID: 100}
+            users = {OWNER_ID: 100}
         o_logger.debug("Loaded users: " + str(users))
 
     def save_users():
@@ -63,7 +63,7 @@ def main():
         o_logger.debug("Users saved")
 
     def say_to_owner(text):
-        return send_message(OWNER_ROOM_ID, str(text))
+        return send_message(OWNER_ID, str(text))
 
     def move_mon_to_q(filename):
         os.rename(MONITOR_FOLDER + filename, QUEUE_FOLDER + filename)
@@ -120,7 +120,7 @@ def main():
     def start(message):
         if message.chat.id not in users:
             send_message(message.chat.id, "Привет! Заявка на регистрацию отправлена администратору.")
-            send_message(OWNER_ROOM_ID,
+            send_message(OWNER_ID,
                          f"Новый пользователь: {message.from_user.username} ({message.chat.id})",
                          reply_markup=markup_templates.gen_user_markup(message.chat.id))
         elif users[message.chat.id] == 1:
@@ -128,7 +128,7 @@ def main():
 
         elif users[message.chat.id] == 0:
             send_message(message.chat.id, "Повторная заявка на регистрацию отправлена администратору.")
-            send_message(OWNER_ROOM_ID,
+            send_message(OWNER_ID,
                          f"Повторная регистрация: {message.from_user.username} ({message.chat.id})",
                          reply_markup=markup_templates.gen_user_markup(message.chat.id))
 
@@ -380,7 +380,7 @@ def main():
                              "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
                                         service != 'count' and ids != []]),
                         chat_id=prog_msg.chat.id, message_id=prog_msg.message_id)
-                    if not call.from_user.id == OWNER_ROOM_ID:
+                    if not call.from_user.id == OWNER_ID:
                         say_to_owner(
                             f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {added['count']} пикч.\nВсего постов: {post_total}.\n" +
                             "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
@@ -713,7 +713,7 @@ def main():
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
                                   f"Всего пикч: {pics_total+1}.")
-                if sender.id != OWNER_ROOM_ID:
+                if sender.id != OWNER_ID:
                     say_to_owner(
                         f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}. "
                         f"Всего пикч: {pics_total+1}.")
