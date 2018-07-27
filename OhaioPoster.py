@@ -14,7 +14,7 @@ from sqlalchemy import func
 import markup_templates
 import util
 from bot_mng import send_photo, send_message
-from creds import TELEGRAM_CHANNEL, OWNER_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, QUEUE_LIMIT, VK_TOKEN, \
+from creds import TELEGRAM_CHANNEL, OWNER_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, VK_TOKEN, \
     VK_GROUP_ID, TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET, TUMBLR_OAUTH_TOKEN, TUMBLR_OAUTH_SECRET, TUMBLR_BLOG_NAME
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope, Setting, User
@@ -104,7 +104,8 @@ def check_queue():
     is_vk_time = any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times)
     with session_scope() as session:
         db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
-        db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]
+        db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
+        limits = {user.user_id: user.queue_limit for user in session.query(User).order_by(User.user_id).all()}
         last_poster = int(db_last_poster.value) if db_last_poster else OWNER_ID
         post_stats = {sender: count for sender, count in
                       session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(QueueItem.sender).all()}
@@ -125,7 +126,7 @@ def check_queue():
             db_users.extend(db_users[:last_index])
             db_users[:last_index] = []
             for new_poster in db_users:
-                if post_stats.get(db_users) >= QUEUE_LIMIT:
+                if post_stats.get(new_poster) >= limits.get(new_poster):
                     break
             else:
                 return None

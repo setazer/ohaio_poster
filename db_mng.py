@@ -16,6 +16,7 @@ class User(Base):
     __tablename__ = 'users'
     user_id = Column(Integer, primary_key=True)
     access = Column(Integer)
+    queue_limit = Column(Integer)
 
     def __repr__(self):
         return f"<User(user_id='{self.user_id}', access='{self.access}')>"

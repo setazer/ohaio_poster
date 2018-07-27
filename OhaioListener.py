@@ -58,7 +58,7 @@ def main():
     def save_users():
         with session_scope() as session:
             for user in users:
-                db_user = User(user_id=user, access=users[user])
+                db_user = User(user_id=user, access=users[user], queue_limit=100)
                 session.merge(db_user)
         o_logger.debug("Users saved")
 
@@ -169,6 +169,24 @@ def main():
             for attr in attrs if getattr(delta, attr)]
         diff = ' '.join(human_readable(rd.relativedelta(cur_time, up_time)))
         send_message(message.chat.id, "Bot is running for: " + diff)
+
+    @bot.message_handler(commands=['set_limit'], func=lambda m: m.chat.type == "private")
+    @access(1)
+    def set_limit(message):
+        with session_scope() as session:
+            db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.queue_limit} for
+                        user in session.query(User).all()}
+            send_message(message.chat.id, "Выберите пользователя для изменения лимита:",
+                         reply_markup=markup_templates.gen_user_limit_markup(db_users))
+
+    def change_limit(message: telebot.types.Message, user: dict):
+        if message.text.isdigit():
+            new_limit = int(message.text)
+            with session_scope() as session:
+                db_user = session.query(User).filter_by(user_id=user).first()
+                db_user.queue_limit = new_limit
+            edit_message("Новый лимит установлен.", message.chat.id, message.message_id)
+
 
     @bot.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
     @access(2)
@@ -419,7 +437,7 @@ def main():
             elif call.data.startswith("tag_ren"):
                 tag = call.data[len("tag_ren"):]
                 service = 'dan'
-                msg = bot.send_message(call.message.chat.id, "Тег на замену:")
+                msg = send_message(call.message.chat.id, "Тег на замену:")
                 next_steps[call.from_user.id] = (service, tag)
                 bot.register_next_step_handler(msg, rename_tag_receiver)
         elif call.data.startswith("rh"):
@@ -430,6 +448,10 @@ def main():
                 send_message(call.message.chat.id, "История перезаполнена.")
             elif call.data.startswith("rh_no"):
                 delete_message(call.message.chat.id, call.message.message_id)
+        elif call.data.startswith("limit"):
+            user = call.data[len("limit"):]
+            msg = send_message(call.message.chat.id, "Новый лимит:")
+            bot.register_next_step_handler(msg, change_limit, user=user)
 
     def rename_tag_receiver(message):
         new_tag = message.text
