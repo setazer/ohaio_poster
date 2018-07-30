@@ -82,7 +82,7 @@ def less_sized_url(*urls, service):
         req_size = req.headers.get('content-length')
         if req_size:
             sizes[url] = int(req_size)
-    least_sized = sorted(sizes, key=sizes.get)[0]
+    least_sized = min(sizes, key=sizes.get)
     return least_sized
 
 
