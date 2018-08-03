@@ -62,7 +62,7 @@ def metadata(service, post_id, pic_name=None):
                                    response['tag_string_copyright'].split()})
             characters = ' '.join({f"#{x.split('_(')[0]}" for x in
                                    response['tag_string_character'].split()})
-            direct = less_sized_url(response['large_file_url'], response['file_url'], service=service)
+            direct = response['file_url']
             pic_ext = response['file_ext']
             pic_name = f"{service}.{post_id}.{pic_ext}"
     else:
@@ -72,19 +72,6 @@ def metadata(service, post_id, pic_name=None):
         characters = []
         copyrights = []
     return (pic_name, direct, authors, characters, copyrights)
-
-
-def less_sized_url(*urls, service):
-    sizes = {}
-    for url in urls:
-        url = usable_url(url, service)
-        req = requests.get(url, stream=True, proxies=REQUESTS_PROXY)
-        req_size = req.headers.get('content-length')
-        if req_size:
-            sizes[url] = int(req_size)
-    least_sized = min(sizes, key=sizes.get)
-    return least_sized
-
 
 def usable_url(url, service):
     if url.startswith('//'):
@@ -110,8 +97,8 @@ def download(url, filename):
     total_length = req.headers.get('content-length', 0)
     if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
         return True
-    if not total_length:  # no content length header
-        return False
+    # if not total_length:  # no content length header
+    #     return False
     try:
         im = Image.open(req.raw)
     except OSError:

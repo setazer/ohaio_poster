@@ -148,7 +148,7 @@ def check_recommendations(new_tag=None):
             pic_name = f"{service}.{post_id}.{pic_ext}"
         else:
             pic_name = ''
-        dl_url = grabber.less_sized_url(new_post['sample_url'], new_post['file_url'], service=service)
+        dl_url = new_post['file_url']
         if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
             new_posts[post_id]['pic_name'] = pic_name
         else:
