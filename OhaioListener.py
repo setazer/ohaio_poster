@@ -535,9 +535,8 @@ def main():
     @bot.message_handler(commands=['add_tag'], func=lambda m: m.chat.type == "private")
     @access(1)
     def add_recommendation_tag(message):
-        try:
-            param = message.text.split()[1:]
-        except IndexError:
+        param = message.text.split()[1:]
+        if not param:
             send_message(message.chat.id, text="А тег-то какой?")
             return
         try:
