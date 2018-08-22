@@ -28,7 +28,7 @@ class WebhookServer(object):
 
 
 def process_request(json_string):
-    api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
+    api = vk_requests.create_api(service_token=VK_TOKEN, api_version="5.80")
     update = json.loads(json_string)
     if update["type"] == "confirmation":
         send_message(TELEGRAM_CHANNEL_VKUPDATES, "✅ Получен запрос от VK")
