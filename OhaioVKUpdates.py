@@ -59,8 +59,7 @@ def process_request(json_string):
                      reply_markup=post_link(update))
         return 'ok'
     else:
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"❓ Необработанный апдейт:\n\n{update}",
-                     reply_markup=post_link(update))
+        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"❓ Необработанный апдейт:\n\n{update}")
         return 'ok'
 
 
