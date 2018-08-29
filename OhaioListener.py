@@ -34,9 +34,10 @@ def main():
         def decorator(func):
             @wraps(func)
             def wrapper(message, *args):
-                if users.get(message.from_user.id, 0) >= access_number:
+                user_access = users[message.from_user.id]['access'] if message.from_user.id in users else 0
+                if user_access >= access_number:
                     func(message, *args)
-                else:
+                elif user_access > 0:
                     if isinstance(message, telebot.types.CallbackQuery):
                         answer_callback(message.id, "Not allowed!")
                     else:
@@ -46,19 +47,19 @@ def main():
 
         return decorator
 
-    def load_users():
-        nonlocal users
+    def load_users(users):
         o_logger.debug("Loading users")
         with session_scope() as session:
-            users = {user: access for user, access in session.query(User.user_id, User.access).all()}
+            users = {user: {"access": access, "limit": limit} for user, access, limit in
+                     session.query(User.user_id, User.access, User.limit).all()}
         if not users:
-            users = {OWNER_ID: 100}
-        o_logger.debug("Loaded users: " + str(users))
+            users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
+        o_logger.debug(f'Loaded users: {", ".join(users.keys())}')
 
-    def save_users():
+    def save_users(users):
         with session_scope() as session:
-            for user in users:
-                db_user = User(user_id=user, access=users[user], queue_limit=100)
+            for user, userdata in users.items():
+                db_user = User(user_id=user, access=userdata['access'], limit=userdata['limit'])
                 session.merge(db_user)
         o_logger.debug("Users saved")
 
@@ -87,7 +88,7 @@ def main():
     paginators = {}
     o_logger.debug("Initializing bot")
     users = {}
-    load_users()
+    load_users(users)
 
     error_msg = None
     shutting_down = False
@@ -123,10 +124,10 @@ def main():
             send_message(OWNER_ID,
                          f"Новый пользователь: {message.from_user.username} ({message.chat.id})",
                          reply_markup=markup_templates.gen_user_markup(message.chat.id))
-        elif users[message.chat.id] == 1:
+        elif users[message.chat.id]['access'] == 1:
             send_message(message.chat.id, "Регистрация уже пройдена.")
 
-        elif users[message.chat.id] == 0:
+        elif users[message.chat.id]['access'] == 0:
             send_message(message.chat.id, "Повторная заявка на регистрацию отправлена администратору.")
             send_message(OWNER_ID,
                          f"Повторная регистрация: {message.from_user.username} ({message.chat.id})",
@@ -137,8 +138,8 @@ def main():
     def stop(message):
         send_message(message.chat.id, "Регистрация отозвана.")
         say_to_owner(f"Регистрация {message.from_user.username} ({message.chat.id}) отозвана.")
-        users[message.chat.id] = 0
-        save_users()
+        users[message.chat.id]['access'] = 0
+        save_users(users)
 
     @bot.message_handler(commands=['shutdown'], func=lambda m: m.chat.type == "private")
     @access(2)
@@ -174,18 +175,21 @@ def main():
     @access(1)
     def set_limit(message):
         with session_scope() as session:
-            db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.queue_limit} for
+            db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.limit} for
                         user in session.query(User).all()}
             send_message(message.chat.id, "Выберите пользователя для изменения лимита:",
                          reply_markup=markup_templates.gen_user_limit_markup(db_users))
 
-    def change_limit(message: telebot.types.Message, user: dict):
+    def change_limit(message: telebot.types.Message, user):
         if message.text.isdigit():
             new_limit = int(message.text)
-            with session_scope() as session:
-                db_user = session.query(User).filter_by(user_id=user).first()
-                db_user.queue_limit = new_limit
+            users[user]['limit'] = new_limit
+            save_users(users)
             edit_message("Новый лимит установлен.", message.chat.id, message.message_id)
+            if message.from_user.id != OWNER_ID:
+                say_to_owner(f"Новый лимит установлен для пользователя {user}:{new_limit}.")
+        else:
+            edit_message("Неверное значение лимита. Ожидается число.", message.chat.id, message.message_id)
 
 
     @bot.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
@@ -306,7 +310,7 @@ def main():
         return suggestions
 
     def valid_artist_name(name):
-        pat = re.compile(r'[\w()-]*$')
+        pat = re.compile(r'[\w()-+]*$')
         return pat.match(name)
 
     def move_back_to_mon():
@@ -325,22 +329,22 @@ def main():
     def callback_query(call):
         if call.data.startswith("user_allow"):
             user = int(call.data[len("user_allow"):])
-            users[user] = 1
-            save_users()
+            users[user]['access'] = 1
+            save_users(users)
             send_message(user, "Регистрация подтверждена.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
 
         elif call.data.startswith("user_deny"):
             user = int(call.data[len("user_deny"):])
-            users[user] = 0
-            save_users()
+            users[user]['access'] = 0
+            save_users(users)
             send_message(user, "Регистрация отклонена.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
 
         elif call.data.startswith("user_block"):
             user = int(call.data[len("user_block"):])
-            users[user] = -1
-            save_users()
+            users[user]['access'] = -1
+            save_users(users)
             send_message(user, "Регистрация отклонена и заблокирована.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
         elif call.data.startswith("rec"):
@@ -393,14 +397,20 @@ def main():
                                             f"Добавлено: {added['count']}",
                                             f"Удалено: {deleted['count']}"))
                     post_total = session.query(QueueItem).count()
+                    user_total = session.query(QueueItem).filter_by(sender=call.from_user.id).count()
                     edit_message(
-                        text=f"Обработка завершена. Добавлено {added['count']} пикч. Всего постов: {post_total}\n" +
+                        text=f"Обработка завершена. Добавлено {added['count']} пикч.\n"
+                             f"В персональной очереди: {user_total}/{users[call.from_user.id]['limit']}\n"
+                             f"Всего постов: {post_total}\n" +
                              "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
                                         service != 'count' and ids != []]),
                         chat_id=prog_msg.chat.id, message_id=prog_msg.message_id)
                     if not call.from_user.id == OWNER_ID:
                         say_to_owner(
-                            f"Обработка монитора пользователем {call.from_user.username} завершена. Добавлено {added['count']} пикч.\nВсего постов: {post_total}.\n" +
+                            f"Обработка монитора пользователем {call.from_user.username} завершена.\n"
+                            f"Добавлено {added['count']} пикч.\n"
+                            f"В персональной очереди: {user_total}/{users[call.from_user.id]['limit']}\n"
+                            f"Всего постов: {post_total}.\n" +
                             "\n".join([f"{service}: {', '.join(ids)}" for service, ids in added.items() if
                                        service != 'count' and ids != []]))
                 send_message(call.message.chat.id, f"Последняя проверка: {time.strftime('%d %b %Y %H:%M:%S UTC+0')}")
@@ -451,7 +461,7 @@ def main():
         elif call.data.startswith("limit"):
             user = call.data[len("limit"):]
             msg = send_message(call.message.chat.id, "Новый лимит:")
-            bot.register_next_step_handler(msg, change_limit, user=user)
+            bot.register_next_step_handler(msg, change_limit, user=int(user))
 
     def rename_tag_receiver(message):
         new_tag = message.text
@@ -703,6 +713,7 @@ def main():
     def queue_picture(sender, service, post_id):
         with session_scope() as session:
             pics_total = session.query(QueueItem).count()
+            user_total = session.query(QueueItem).filter_by(sender=sender.id).count()
             pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
                 service=service, post_id=post_id).first()
             if pic:
@@ -719,7 +730,8 @@ def main():
                     move_mon_to_q(pic.monitor_item.pic_name)
                     session.delete(pic.monitor_item)
                     send_message(chat_id=sender.id,
-                                 text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
+                                 text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. \n"
+                                      f"В персональной очереди: {user_total+1}/{users[sender.id]['limit']}.\n"
                                       f"Всего пикч: {pics_total+1}.")
                     return
             o_logger.debug("Getting post info")
@@ -733,11 +745,13 @@ def main():
             if grabber.download(direct, QUEUE_FOLDER + pic_name):
                 session.add(new_pic)
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
-                             text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. "
+                             text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена.\n"
+                                  f"В персональной очереди: {user_total+1}/{users[sender.id]['limit']}.\n"
                                   f"Всего пикч: {pics_total+1}.")
                 if sender.id != OWNER_ID:
                     say_to_owner(
-                        f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}. "
+                        f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}.\n"
+                        f"В персональной очереди: {user_total+1}/{users[sender.id]['limit']}.\n"
                         f"Всего пикч: {pics_total+1}.")
             else:
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,

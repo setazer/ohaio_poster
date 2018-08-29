@@ -7,7 +7,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
-from creds import *
+from creds import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
 
 Base = declarative_base()
 
@@ -16,7 +16,7 @@ class User(Base):
     __tablename__ = 'users'
     user_id = Column(Integer, primary_key=True)
     access = Column(Integer)
-    queue_limit = Column(Integer)
+    limit = Column(Integer)
 
     def __repr__(self):
         return f"<User(user_id='{self.user_id}', access='{self.access}')>"

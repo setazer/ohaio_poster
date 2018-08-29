@@ -105,7 +105,7 @@ def check_queue():
     with session_scope() as session:
         db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
         db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
-        limits = {user.user_id: user.queue_limit for user in session.query(User).order_by(User.user_id).all()}
+        limits = {user.user_id: user.limit for user in session.query(User).order_by(User.user_id).all()}
         last_poster = int(db_last_poster.value) if db_last_poster else OWNER_ID
         post_stats = {sender: count for sender, count in
                       session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(QueueItem.sender).all()}
