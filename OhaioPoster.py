@@ -9,14 +9,15 @@ import requests
 import telebot
 import vk_requests
 from PIL import Image, ImageDraw, ImageFont
+from sqlalchemy import func
 
 import markup_templates
 import util
 from bot_mng import send_photo, send_message
-from creds import TELEGRAM_CHANNEL, OWNER_ROOM_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, QUEUE_LIMIT, VK_TOKEN, \
+from creds import TELEGRAM_CHANNEL, OWNER_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, VK_TOKEN, \
     VK_GROUP_ID, TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET, TUMBLR_OAUTH_TOKEN, TUMBLR_OAUTH_SECRET, TUMBLR_BLOG_NAME
 from creds import service_db
-from db_mng import Pic, QueueItem, HistoryItem, session_scope, Setting
+from db_mng import Pic, QueueItem, HistoryItem, session_scope, Setting, User
 
 
 def update_header():
@@ -64,7 +65,7 @@ def get_current_album():
             return str(new_album['id'])
 
 
-def post_picture(new_post, msg='#ohaioposter'):
+def post_to_vk(new_post, msg='#ohaioposter'):
     post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id']
     # Авторизация
     msg += "\nОригинал: " + post_url
@@ -98,14 +99,45 @@ def post_to_tumblr(new_post):
 
 
 def check_queue():
+    vk_posting_times = [(55, 60), (0, 5), (25, 35)]
+    minute = datetime.datetime.now().minute
+    is_vk_time = any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times)
     with session_scope() as session:
-        posts = session.query(QueueItem).order_by(QueueItem.id).all()
+        db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
+        db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
+        limits = {user.user_id: user.limit for user in session.query(User).order_by(User.user_id).all()}
+        last_poster = int(db_last_poster.value) if db_last_poster else OWNER_ID
+        post_stats = {sender: count for sender, count in
+                      session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(QueueItem.sender).all()}
+        if not post_stats:
+            return None
+        new_poster = last_poster
+        if args.forced_post or is_vk_time:  # should always switch poster
+            if post_stats.get(last_poster):
+                del post_stats[last_poster]
+
+                if post_stats:
+                    while not new_poster in post_stats:
+                        new_index = db_users.index(new_poster)
+                        db_users.append(db_users.pop(0))
+                        new_poster = db_users[new_index]
+        else:  # can stay same if appropriate
+            last_index = db_users.index(last_poster)
+            db_users.extend(db_users[:last_index])
+            db_users[:last_index] = []
+            for new_poster in db_users:
+                if post_stats.get(new_poster) >= limits.get(new_poster):
+                    break
+            else:
+                return None
+
+        posts = session.query(QueueItem).filter_by(sender=new_poster).order_by(QueueItem.id).all()
         new_post = None
         for post in posts:
             if os.path.exists(QUEUE_FOLDER + post.pic_name) and not post.pic.history_item:
                 new_post = {'service': post.pic.service, 'post_id': post.pic.post_id, 'authors': post.pic.authors,
                             'chars': post.pic.chars, 'copyright': post.pic.copyright, 'pic_name': post.pic_name,
-                            'sender': post.sender}
+                            'sender': post.sender, 'post_to_vk': is_vk_time}
                 break
             else:
                 session.delete(post)
@@ -125,9 +157,9 @@ def add_to_history(new_post, wall_id):
         session.merge(pic)
 
 
+
 def main(log):
     telebot.apihelper.proxy = REQUESTS_PROXY
-    vk_posting_times = [(55, 60), (0, 5), (25, 35)]
 
     log.debug('Checking queue for new posts')
     new_post = check_queue()
@@ -152,20 +184,19 @@ def main(log):
     with session_scope() as session:
         pic = session.query(Pic).filter_by(service=new_post['service'],
                                            post_id=new_post['post_id']).first()
-        queue_len = session.query(QueueItem).count()
         file_id = pic.file_id
-        minute = datetime.datetime.now().minute
-        if args.forced_post or any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times):
+        if new_post['post_to_vk']:
             try:
-                wall_id = post_picture(new_post, msg)
+                wall_id = post_to_vk(new_post, msg)
             except Exception as ex:
                 o_logger.error(ex)
                 util.log_error(ex)
                 wall_id = -1
-        elif queue_len > QUEUE_LIMIT:
-            wall_id = -1
+            else:
+                last_poster = Setting(setting='last_poster', value=str(new_post['sender']))
+                session.merge(last_poster)
         else:
-            return
+            wall_id = -1
     log.debug('Adding to history')
     add_to_history(new_post, wall_id)
     log.debug('Posting to Telegram')
@@ -183,8 +214,8 @@ def main(log):
     os.remove(QUEUE_FOLDER + new_post['pic_name'])
     send_message(new_post['sender'],
                      f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
-    if new_post['sender'] != OWNER_ROOM_ID:
-        send_message(OWNER_ROOM_ID,
+    if new_post['sender'] != OWNER_ID:
+        send_message(OWNER_ID,
                          f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
     log.debug('Posting finished')
     update_header()

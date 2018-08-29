@@ -27,7 +27,7 @@ TELEGRAM_CHANNEL = '' # channel id for posting pictures to
 TELEGRAM_CHANNEL_MON = '' # channel id where OhaioMonitor posts suggested pictures
 TELEGRAM_CHANNEL_VKUPDATES = '' #  channel id where OhaioVKUpdates posts stuff happening in VK Group
 
-OWNER_ROOM_ID = 0 # bot owner telegram id
+OWNER_ID = 0  # bot owner telegram id
 
 # CherryPy config
 WEBHOOK_HOST = 'host.name'

@@ -9,6 +9,17 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from creds import VK_GROUP_ID, service_db
 
 
+def gen_user_limit_markup(users):
+    user_limit_markup = InlineKeyboardMarkup()
+    user_limit_markup.row_width = 2
+    buttons = []
+    for user, data in users.items():
+        buttons.append(
+            InlineKeyboardButton(f"{data['username'] or user}: {data['limit']}", callback_data=f"limit{user}"))
+    user_limit_markup.add(*buttons)
+    return user_limit_markup
+
+
 def gen_post_link(wall_id):
     if wall_id == -1:
         return None

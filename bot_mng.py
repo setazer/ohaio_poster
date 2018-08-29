@@ -11,7 +11,6 @@ from creds import TELEGRAM_TOKEN, REQUESTS_PROXY
 telebot.apihelper.proxy = REQUESTS_PROXY
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-
 # wrappers
 def bot_action(func):
     @wraps(func)
