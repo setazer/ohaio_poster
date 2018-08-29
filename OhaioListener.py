@@ -15,6 +15,7 @@ import requests
 import telebot
 import vk_requests
 from PIL import Image, ImageOps, ImageDraw, ImageFont
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 import grabber
@@ -57,7 +58,7 @@ def main():
             users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
         o_logger.debug(f'Loaded users: {", ".join(str(user) for user in users.keys())}')
 
-    def save_users(users):
+    def save_users():
         with session_scope() as session:
             for user, userdata in users.items():
                 db_user = User(user_id=user, access=userdata['access'], limit=userdata['limit'])
@@ -181,16 +182,26 @@ def main():
             send_message(message.chat.id, "Выберите пользователя для изменения лимита:",
                          reply_markup=markup_templates.gen_user_limit_markup(db_users))
 
-    def change_limit(message: telebot.types.Message, user):
+    def change_limit(message, user=None):
         if message.text.isdigit():
             new_limit = int(message.text)
             users[user]['limit'] = new_limit
-            save_users(users)
-            edit_message("Новый лимит установлен.", message.chat.id, message.message_id)
+            save_users()
+            send_message(message.chat.id, "Новый лимит установлен.")
             if message.from_user.id != OWNER_ID:
                 say_to_owner(f"Новый лимит установлен для пользователя {user}:{new_limit}.")
         else:
-            edit_message("Неверное значение лимита. Ожидается число.", message.chat.id, message.message_id)
+            send_message(message.chat.id, "Неверное значение лимита. Ожидается число.")
+
+    @bot.message_handler(commands=['stats'], func=lambda m: m.chat.type == "private")
+    @access(2)
+    def stats(message):
+        with session_scope() as session:
+            post_stats = {f"{sender}: {count}/{users[sender]['limit']}" for sender, count in
+                          session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(
+                              QueueItem.sender).all()}
+            msg = f"Статистика пользователей:\n" + "\n".join(post_stats)
+            send_message(message.chat.id, msg)
 
 
     @bot.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
@@ -331,21 +342,21 @@ def main():
         if call.data.startswith("user_allow"):
             user = int(call.data[len("user_allow"):])
             users[user]['access'] = 1
-            save_users(users)
+            save_users()
             send_message(user, "Регистрация подтверждена.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
 
         elif call.data.startswith("user_deny"):
             user = int(call.data[len("user_deny"):])
             users[user]['access'] = 0
-            save_users(users)
+            save_users()
             send_message(user, "Регистрация отклонена.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
 
         elif call.data.startswith("user_block"):
             user = int(call.data[len("user_block"):])
             users[user]['access'] = -1
-            save_users(users)
+            save_users()
             send_message(user, "Регистрация отклонена и заблокирована.")
             edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
         elif call.data.startswith("rec"):
@@ -461,6 +472,7 @@ def main():
                 delete_message(call.message.chat.id, call.message.message_id)
         elif call.data.startswith("limit"):
             user = call.data[len("limit"):]
+            delete_message(call.message.chat.id, call.message.message_id)
             msg = send_message(call.message.chat.id, "Новый лимит:")
             bot.register_next_step_handler(msg, change_limit, user=int(user))
 
