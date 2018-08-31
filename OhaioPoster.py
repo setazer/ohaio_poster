@@ -126,7 +126,7 @@ def check_queue():
             db_users.extend(db_users[:last_index])
             db_users[:last_index] = []
             for new_poster in db_users:
-                if post_stats.get(new_poster) >= limits.get(new_poster):
+                if post_stats.get(new_poster, 0) >= limits.get(new_poster):
                     break
             else:
                 return None
