@@ -3,6 +3,7 @@ from datetime import date
 import vk_requests
 from dateutil.relativedelta import relativedelta
 
+from creds import VK_TOKEN, VK_GROUP_ID
 from db_mng import *
 
 with session_scope() as session:
