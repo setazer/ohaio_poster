@@ -101,7 +101,7 @@ def post_to_tumblr(new_post):
 def check_queue():
     vk_posting_times = [(55, 60), (0, 5), (25, 35)]
     minute = datetime.datetime.now().minute
-    is_vk_time = any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times)
+    is_vk_time = args.forced_post or any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times)
     with session_scope() as session:
         db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
         db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
@@ -112,7 +112,7 @@ def check_queue():
         if not post_stats:
             return None
         new_poster = last_poster
-        if args.forced_post or is_vk_time:  # should always switch poster
+        if is_vk_time:  # should always switch poster
             if post_stats.get(last_poster):
                 del post_stats[last_poster]
 
