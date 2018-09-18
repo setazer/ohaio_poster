@@ -46,7 +46,7 @@ def get_current_album():
         num_photos = session.query(Setting).filter_by(setting='num_photos').first()
         if int(num_photos.value) < 10000:
             return cur_album.value
-        elif num_photos == '10000':
+        else:
             api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
             albums = api.photos.getAlbums(owner_id='-' + VK_GROUP_ID, album_ids=(int(cur_album.value),))['items']
             # latest_album = [id for id in sorted(albums, key=lambda k: k['updated'], reverse=True)][0]
