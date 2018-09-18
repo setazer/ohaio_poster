@@ -685,9 +685,10 @@ def main():
                 pic_name = 'pix.' + os.path.basename(url)
                 edit_markup(pixiv_msg.chat.id, pixiv_msg.message_id,
                             reply_markup=markup_templates.gen_status_markup(f"{idx}/{total}"))
-                if grabber.download(url, MONITOR_FOLDER + pic_name):
+                pic_hash = grabber.download(url, MONITOR_FOLDER + pic_name)
+                if pic_hash:
                     new_posts[post_id] = {'pic_name': pic_name, 'authors': "#" + req['illust']['user']['account'],
-                                          'chars': '', 'copyright': ''}
+                                          'chars': '', 'copyright': '', 'hash': pic_hash}
                 else:
                     send_message(sender.id, f"Не удалось скачать {pic_name}")
             if present_pics:
@@ -697,8 +698,7 @@ def main():
                              pixiv_msg.message_id)
                 return
             edit_message("Выкладываю пикчи в монитор", pixiv_msg.chat.id, pixiv_msg.message_id)
-            for post_id in new_posts:
-                new_post = new_posts[post_id]
+            for post_id, new_post in new_posts.items():
                 if new_post['pic_name']:
                     with session_scope() as session:
                         pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
@@ -708,7 +708,8 @@ def main():
                                 post_id=post_id,
                                 authors=new_post['authors'],
                                 chars=new_post['chars'],
-                                copyright=new_post['copyright'])
+                                copyright=new_post['copyright'],
+                                hash=new_post['hash'])
                             session.add(pic)
                             session.flush()
                             session.refresh(pic)
@@ -754,7 +755,9 @@ def main():
             new_pic = Pic(service=service, post_id=post_id, authors=authors, chars=characters, copyright=copyrights)
             new_pic.queue_item = QueueItem(sender=sender.id, pic_name=pic_name)
             dl_msg = send_message(sender.id, "Скачиваю пикчу")
-            if grabber.download(direct, QUEUE_FOLDER + pic_name):
+            pic_hash = grabber.download(direct, QUEUE_FOLDER + pic_name)
+            if pic_hash:
+                new_pic.hash = pic_hash
                 session.add(new_pic)
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена.\n"

@@ -40,6 +40,7 @@ class Pic(Base):
     service = Column(String(15), nullable=False)
     post_id = Column(String(15), nullable=False)
     file_id = Column(String(80))
+    hash = Column(String(64))
     authors = Column(String(300))
     chars = Column(String(300))
     copyright = Column(String(300))

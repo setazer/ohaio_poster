@@ -150,8 +150,10 @@ def check_recommendations(new_tag=None):
         else:
             pic_name = ''
         dl_url = new_post['file_url']
-        if grabber.download(dl_url, MONITOR_FOLDER + pic_name):
+        post_hash = grabber.download(dl_url, MONITOR_FOLDER + pic_name)
+        if post_hash:
             new_posts[post_id]['pic_name'] = pic_name
+            new_posts[post_id]['hash'] = post_hash
         else:
             new_posts[post_id]['pic_name'] = None
     edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
@@ -166,7 +168,8 @@ def check_recommendations(new_tag=None):
                         post_id=post_id,
                         authors=new_post['authors'],
                         chars=new_post['chars'],
-                        copyright=new_post['copyright'])
+                        copyright=new_post['copyright'],
+                        hash=new_post['hash'])
                     session.add(pic)
                     session.flush()
                     session.refresh(pic)

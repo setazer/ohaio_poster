@@ -2,19 +2,12 @@
 import os
 
 import requests
-# import imagehash
 from PIL import Image
 from bs4 import BeautifulSoup
+from imagehash import dhash
 
 import util
 from creds import service_db, REQUESTS_PROXY
-
-
-# def hash(image_file):
-#     return imagehash.average_hash(Image.open(image_file))
-#
-# def hash_diff(hash1:imagehash.ImageHash,hash2:imagehash.ImageHash):
-#     return (hash1-hash2)/(hash1.hash)**2
 
 
 def metadata(service, post_id, pic_name=None):
@@ -93,19 +86,22 @@ def download(url, filename):
         req = requests.get(url, stream=True, proxies=proxies, headers=headers)
     except requests.exceptions.RequestException as ex:
         util.log_error(ex)
-        return False
+        return None
     total_length = req.headers.get('content-length', 0)
     if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
-        return True
+        im = Image.open(filename)
+        im_hash = dhash(im, hash_size=16)
+        return str(im_hash)
     # if not total_length:  # no content length header
     #     return False
     try:
         im = Image.open(req.raw)
     except OSError:
-        return False
+        return None
     aspect = im.height / im.width
     if not (3 >= aspect >= 0.3):
-        return False
+        return None
     im.thumbnail((2000, 2000))
+    im_hash = dhash(im, hash_size=16)
     im.save(filename)
-    return True
+    return str(im_hash)
