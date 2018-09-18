@@ -5,6 +5,7 @@ import requests
 import vk_requests
 from sqlalchemy import and_
 
+import grabber
 from creds import VK_TOKEN, VK_GROUP_ID, service_db, REQUESTS_PROXY, QUEUE_FOLDER, OWNER_ID
 from db_mng import session_scope, Setting, Tag, Pic, QueueItem
 
@@ -57,3 +58,17 @@ def requeue():
                 pic.queue_item = QueueItem(sender=OWNER_ID, pic_name=entry)
                 session.merge(pic)
         print(session.query(QueueItem).count())
+
+
+def fill_hashes():
+    with session_scope() as session:
+        pics = session.query(Pic).all()
+        for i, pic_item in enumerate(pics):
+            if not pic_item.hash:
+                pic_name, direct, *__ = grabber.metadata(pic_item.service, pic_item.post_id)
+                if direct and pic_name:
+                    pic_hash = grabber.download(direct, pic_name)
+                    pic_item.hash = pic_hash
+                    session.flush()
+                if not (i % 100):
+                    print(f'{i}/{len(pics)}')
