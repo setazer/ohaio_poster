@@ -173,8 +173,9 @@ def check_recommendations(new_tag=None):
                 mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                          f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                      reply_markup=markup_templates.gen_rec_new_markup(pic.id, service, pic.post_id,
-                                                                                      new_post['safe']))
-                pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
+                                                                                      not new_post['safe']))
+                pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
+                                               to_del=not new_post['safe'])
                 pic.file_id = mon_msg.photo[0].file_id
                 session.query(Tag).filter_by(tag=new_post['tag'],
                                              service=service).first().last_check = int(post_id)
