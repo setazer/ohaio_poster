@@ -6,8 +6,10 @@ import vk_requests
 from sqlalchemy import and_
 
 import grabber
-from creds import VK_TOKEN, VK_GROUP_ID, service_db, REQUESTS_PROXY, QUEUE_FOLDER, OWNER_ID
+from bot_mng import send_message, edit_markup
+from creds import VK_TOKEN, VK_GROUP_ID, service_db, REQUESTS_PROXY, QUEUE_FOLDER, OWNER_ID, TELEGRAM_CHANNEL_MON
 from db_mng import session_scope, Setting, Tag, Pic, QueueItem
+from markup_templates import gen_status_markup
 
 
 def sync_num_photos():
@@ -62,14 +64,26 @@ def requeue():
 
 def fill_hashes():
     with session_scope() as session:
-        pics = session.query(Pic).filter_by(service='dan').all()
+        pics = session.query(Pic).filter_by(service='dan', hash=None).all()
+        pics_total = len(pics)
+        h_msg = send_message(TELEGRAM_CHANNEL_MON, "Rebuilding hashes")
         for i, pic_item in enumerate(pics):
             if not pic_item.hash:
-                pic_name, direct, *__ = grabber.metadata(pic_item.service, pic_item.post_id)
+                try:
+                    pic_name, direct, *__ = grabber.metadata(pic_item.service, pic_item.post_id)
+                except Exception as ex:
+                    send_message(OWNER_ID, str(ex)[:3000])
+                    direct = None
                 if direct and pic_name:
-                    pic_hash = grabber.download(direct, pic_name)
-                    pic_item.hash = pic_hash
-                    session.flush()
-                    os.remove(pic_name)
-                if not (i % 100):
-                    print(f'{i}/{len(pics)}')
+                    try:
+                        pic_hash = grabber.download(direct, pic_name)
+                    except Exception as ex:
+                        send_message(OWNER_ID, str(ex)[:3000])
+                        pic_hash = None
+                    if pic_hash:
+                        pic_item.hash = pic_hash
+                        session.commit()
+                        os.remove(pic_name)
+                    edit_markup(h_msg.chat.id, h_msg.message_id,
+                                reply_markup=gen_status_markup(f"{pic_item.service}: {pic_item.post_id}",
+                                                  f"{i}/{pics_total}"))
