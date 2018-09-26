@@ -30,6 +30,7 @@ def check_recommendations(new_tag=None):
                  session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
         history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
                    session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
+        hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
         tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
         tags = {item.tag: {'last_check': item.last_check or 0, 'missing_times': item.missing_times or 0} for item in (
             session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
@@ -173,12 +174,17 @@ def check_recommendations(new_tag=None):
                     session.add(pic)
                     session.flush()
                     session.refresh(pic)
+                is_dupe = new_post['hash'] in hashes
+                if not is_dupe:
+                    hashes[new_post['hash']] = post_id
                 mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                          f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                      reply_markup=markup_templates.gen_rec_new_markup(pic.id, service, pic.post_id,
-                                                                                      not new_post['safe']))
+                                                                                      not new_post['safe'] or is_dupe,
+                                                                                      hashes[new_post[
+                                                                                          'hash']] if is_dupe else None))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
-                                               to_del=not new_post['safe'])
+                                               to_del=not new_post['safe'] or is_dupe)
                 pic.file_id = mon_msg.photo[0].file_id
                 session.query(Tag).filter_by(tag=new_post['tag'],
                                              service=service).first().last_check = int(post_id)

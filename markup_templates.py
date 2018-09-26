@@ -20,6 +20,16 @@ def gen_user_limit_markup(users):
     return user_limit_markup
 
 
+def gen_dupe_markup(service, dupe_id):
+    dupe_markup = InlineKeyboardMarkup()
+    dupe_markup.row_width = 2
+    dupe_markup.row(InlineKeyboardButton(text="Походу это дубликат",
+                                         url="".join(["https://", service_db[service]['post_url'], dupe_id])))
+    dupe_markup.add(InlineKeyboardButton("✅ Оставить", callback_data=f"dupe_allow{service} {dupe_id}"),
+                    InlineKeyboardButton("❌ Удалить", callback_data=f"dupe_remove{service} {dupe_id}"))
+    return dupe_markup
+
+
 def gen_post_link(wall_id):
     if wall_id == -1:
         return None
@@ -60,7 +70,7 @@ def gen_del_tag_markup(tag):
     return del_tag_markup
 
 
-def gen_rec_new_markup(id, service, post_id, checked=False):
+def gen_rec_new_markup(id, service, post_id, checked=False, dupe_id=None):
     rec_new_markup = InlineKeyboardMarkup()
     to_del = "❎" if not checked else "❌"
     rec_new_markup.row_width = 2
@@ -69,6 +79,9 @@ def gen_rec_new_markup(id, service, post_id, checked=False):
         InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
         InlineKeyboardButton(text="Оригинал",
                              url="".join(["https://", service_db[service]['post_url'], post_id])))
+    if dupe_id:
+        rec_new_markup.row(InlineKeyboardButton(text=f"Дубликат ID:{dupe_id}",
+                                                url="".join(["https://", service_db[service]['post_url'], dupe_id])))
     return rec_new_markup
 
 

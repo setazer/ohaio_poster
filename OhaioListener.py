@@ -475,6 +475,18 @@ def main():
             delete_message(call.message.chat.id, call.message.message_id)
             msg = send_message(call.message.chat.id, "Новый лимит:")
             bot.register_next_step_handler(msg, change_limit, user=int(user))
+        elif call.data.startswith("dupe"):
+            if call.data.startswith("dupe_allow"):
+                edit_markup(call.message.chat.id, call.message.message_id)
+            elif call.data.startswith("dupe_remove"):
+                data = call.data[len("dupe_remove"):]
+                service, post_id = data.split()
+                with session_scope() as session:
+                    pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+                    session.delete(pic.queue_item)
+                    pic.history_item = HistoryItem(wall_id=-1)
+                    edit_markup(call.message.chat.id, call.message.message_id)
+
 
     def rename_tag_receiver(message):
         new_tag = message.text
@@ -727,6 +739,7 @@ def main():
         with session_scope() as session:
             pics_total = session.query(QueueItem).count()
             user_total = session.query(QueueItem).filter_by(sender=sender.id).count()
+            hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
             pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
                 service=service, post_id=post_id).first()
             if pic:
@@ -757,12 +770,14 @@ def main():
             dl_msg = send_message(sender.id, "Скачиваю пикчу")
             pic_hash = grabber.download(direct, QUEUE_FOLDER + pic_name)
             if pic_hash:
+                is_dupe = pic_hash in hashes
                 new_pic.hash = pic_hash
                 session.add(new_pic)
                 edit_message(chat_id=dl_msg.chat.id, message_id=dl_msg.message_id,
                              text=f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена.\n"
                                   f"В персональной очереди: {user_total+1}/{users[sender.id]['limit']}.\n"
-                                  f"Всего пикч: {pics_total+1}.")
+                                  f"Всего пикч: {pics_total+1}.",
+                             reply_markup=markup_templates.gen_dupe_markup(service, post_id) if is_dupe else None)
                 if sender.id != OWNER_ID:
                     say_to_owner(
                         f"Новая пикча ID {post_id} ({service_db[service]['name']}) добавлена пользователем {sender.username}.\n"

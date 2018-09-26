@@ -70,5 +70,6 @@ def fill_hashes():
                     pic_hash = grabber.download(direct, pic_name)
                     pic_item.hash = pic_hash
                     session.flush()
+                    os.remove(pic_name)
                 if not (i % 100):
                     print(f'{i}/{len(pics)}')
