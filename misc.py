@@ -62,7 +62,7 @@ def requeue():
 
 def fill_hashes():
     with session_scope() as session:
-        pics = session.query(Pic).all()
+        pics = session.query(Pic).filter_by(service='dan').all()
         for i, pic_item in enumerate(pics):
             if not pic_item.hash:
                 pic_name, direct, *__ = grabber.metadata(pic_item.service, pic_item.post_id)
