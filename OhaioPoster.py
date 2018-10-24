@@ -89,7 +89,7 @@ def post_to_vk(new_post, msg='#ohaioposter'):
 
 def post_to_tumblr(new_post):
     post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id']
-    msg = "Оригинал: " + post_url
+    msg = "Post source: " + post_url
     tags_raw = new_post.get('authors').split() + new_post.get('chars').split() + new_post.get('copyright').split()
     tags = list({tag.replace('_', ' ').replace('#', '') for tag in tags_raw})
     t_api = pytumblr.TumblrRestClient(TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET, TUMBLR_OAUTH_TOKEN,
