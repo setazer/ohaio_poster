@@ -115,10 +115,11 @@ def check_queue():
         if is_vk_time:  # should always switch poster
             if post_stats.get(last_poster):
                 del post_stats[last_poster]
-            while not new_poster in post_stats:
-                new_index = db_users.index(new_poster)
-                db_users.append(db_users.pop(0))
-                new_poster = db_users[new_index]
+            if post_stats:
+                while not new_poster in post_stats:
+                    new_index = db_users.index(new_poster)
+                    db_users.append(db_users.pop(0))
+                    new_poster = db_users[new_index]
         else:  # can stay same if appropriate
             last_index = db_users.index(last_poster)
             db_users.extend(db_users[:last_index])
