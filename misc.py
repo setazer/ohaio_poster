@@ -64,7 +64,7 @@ def requeue():
 
 def fill_hashes():
     with session_scope() as session:
-        pics = session.query(Pic).filter_by(service='dan', hash=None).all()
+        pics = session.query(Pic).filter_by(service='dan').all()
         pics_total = len(pics)
         h_msg = send_message(TELEGRAM_CHANNEL_MON, "Rebuilding hashes")
         for i, pic_item in enumerate(pics):

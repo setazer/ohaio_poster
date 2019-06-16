@@ -42,10 +42,8 @@ WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
 
 # Misc
 QUEUE_LIMIT = 240
-REQUESTS_PROXY = {}
-#    "http": "proxy.antizapret.prostovpn.org:3128",
-#    "https": "proxy.antizapret.prostovpn.org:3128"
-# }
+REQUESTS_PROXY = None  # "http://proxy.host:1234" or "socks5://proxy.host:1234"
+
 MONITOR_FOLDER = path_join(getcwd(), 'pics', 'mon', '')
 makedirs(MONITOR_FOLDER, exist_ok=True)
 QUEUE_FOLDER = path_join(getcwd(), 'pics', 'q', '')

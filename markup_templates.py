@@ -1,120 +1,172 @@
 # -*- coding: utf-8 -*-
-import random
+from aiogram import types, Dispatcher
+from aiogram.dispatcher.filters import BoundFilter
+from aiogram.utils.callback_data import CallbackData
+from aiogram.utils.emoji import emojize
 from math import ceil
-from random import randint
 
-from telebot.apihelper import ApiException
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-
+from bot_mng import bot_action
 from creds import VK_GROUP_ID, service_db
+
+user_manager_cb = CallbackData('user', 'user_id', 'action')
+
+
+def gen_user_markup(user):
+    user_markup = types.InlineKeyboardMarkup()
+    user_markup.row_width = 2
+    user_markup.add(types.InlineKeyboardButton("Да", callback_data=user_manager_cb.new(user_id=user, action="allow")),
+                    types.InlineKeyboardButton("Нет", callback_data=user_manager_cb.new(user_id=user, action="deny")))
+    user_markup.row(types.InlineKeyboardButton("Забанить",
+                                               callback_data=user_manager_cb.new(user_id=user, action="block")))
+    return user_markup
+
+
+dupes_cb = CallbackData('dupe', 'service', 'dupe_id', 'action')
+
+
+def gen_dupe_markup(service, dupe_id):
+    dupe_markup = types.InlineKeyboardMarkup()
+    dupe_markup.row_width = 2
+    dupe_markup.row(types.InlineKeyboardButton(text="Походу это дубликат",
+                                               url="".join(["https://", service_db[service]['post_url'], dupe_id])))
+    dupe_markup.add(types.InlineKeyboardButton(emojize(":white_heavy_check_mark: Оставить"),
+                                               callback_data=dupes_cb.new(service=service, dupe_id=dupe_id,
+                                                                          action="allow")),
+                    types.InlineKeyboardButton(emojize(":cross_mark: Удалить"),
+                                               callback_data=dupes_cb.new(service=service, dupe_id=dupe_id,
+                                                                          action="delete")))
+    return dupe_markup
+
+
+rebuild_history_cb = CallbackData('rebuild', 'action')
+
+
+def gen_rebuild_history_markup():
+    rebuild_history_markup = types.InlineKeyboardMarkup()
+    rebuild_history_markup.row_width = 2
+    rebuild_history_markup.add(types.InlineKeyboardButton(emojize(":white_heavy_check_mark: Да"),
+                                                          callback_data=rebuild_history_cb.new(action='allow')),
+                               types.InlineKeyboardButton(emojize(":cross_mark: Нет"),
+                                                          callback_data=rebuild_history_cb.new(action='deny')))
+    return rebuild_history_markup
+
+
+limit_cb = CallbackData('limit', 'user_id')
 
 
 def gen_user_limit_markup(users):
-    user_limit_markup = InlineKeyboardMarkup()
+    user_limit_markup = types.InlineKeyboardMarkup()
     user_limit_markup.row_width = 2
     buttons = []
     for user, data in users.items():
         buttons.append(
-            InlineKeyboardButton(f"{data['username'] or user}: {data['limit']}", callback_data=f"limit{user}"))
+            types.InlineKeyboardButton(f"{data['username'] or user}: {data['limit']}",
+                                       callback_data=limit_cb.new(user_id=user)))
     user_limit_markup.add(*buttons)
     return user_limit_markup
-
-
-def gen_dupe_markup(service, dupe_id):
-    dupe_markup = InlineKeyboardMarkup()
-    dupe_markup.row_width = 2
-    dupe_markup.row(InlineKeyboardButton(text="Походу это дубликат",
-                                         url="".join(["https://", service_db[service]['post_url'], dupe_id])))
-    dupe_markup.add(InlineKeyboardButton("✅ Оставить", callback_data=f"dupe_allow{service} {dupe_id}"),
-                    InlineKeyboardButton("❌ Удалить", callback_data=f"dupe_remove{service} {dupe_id}"))
-    return dupe_markup
 
 
 def gen_post_link(wall_id):
     if wall_id == -1:
         return None
     link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
-    link_markup = InlineKeyboardMarkup()
-    link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=link))
+    link_markup = types.InlineKeyboardMarkup()
+    link_markup.add(types.InlineKeyboardButton(text="Перейти к посту", url=link))
     return link_markup
 
-def gen_user_markup(user):
-    user_markup = InlineKeyboardMarkup()
-    user_markup.row_width = 2
-    user_markup.add(InlineKeyboardButton("Да", callback_data=f"user_allow{user}"),
-                    InlineKeyboardButton("Нет", callback_data=f"user_deny{user}"))
-    user_markup.row(InlineKeyboardButton("Забанить", callback_data=f"user_block{user}"))
-    return user_markup
-
-
-def gen_rebuild_history_markup():
-    rebuild_history_markup = InlineKeyboardMarkup()
-    rebuild_history_markup.row_width = 2
-    rebuild_history_markup.add(InlineKeyboardButton("✅ Да", callback_data=f"rh_yes"),
-                               InlineKeyboardButton("❌ Нет", callback_data=f"rh_no"))
-    return rebuild_history_markup
 
 def gen_status_markup(*args):
-    status_markup = InlineKeyboardMarkup()
+    status_markup = types.InlineKeyboardMarkup()
     for arg in args:
         status_markup.row(
-            InlineKeyboardButton(text=arg, callback_data='progress'))
+            types.InlineKeyboardButton(text=arg, callback_data='progress'))
     return status_markup
 
 
+rec_fix_cb = CallbackData('rec_fix', 'tag')
+
+
 def gen_del_tag_markup(tag):
-    del_tag_markup = InlineKeyboardMarkup()
+    del_tag_markup = types.InlineKeyboardMarkup()
     del_tag_markup.add(
-        InlineKeyboardButton(text="Попытаться исправить", callback_data=f"rec_fix{tag}"),
-        InlineKeyboardButton(text="Загуглить", url=rf"https://www.google.ru/search?q=gelbooru {tag}"))
+        types.InlineKeyboardButton(text="Попытаться исправить", callback_data=rec_fix_cb.new(tag=tag)),
+        types.InlineKeyboardButton(text="Загуглить", url=rf"https://www.google.ru/search?q={tag}"))
     return del_tag_markup
 
 
+post_rec_cb = CallbackData('post_rec', 'post_id', 'action')
+
+
 def gen_rec_new_markup(id, service, post_id, checked=False, dupe_id=None):
-    rec_new_markup = InlineKeyboardMarkup()
-    to_del = "❎" if not checked else "❌"
+    rec_new_markup = types.InlineKeyboardMarkup()
+    to_del = emojize(":cross_mark_button:" if not checked else ":cross_mark:")
     rec_new_markup.row_width = 2
     rec_new_markup.add(
-        InlineKeyboardButton(text=f"{to_del} Удалить", callback_data=f"rec_del{id} {random.randint(1,1000000)}"),
-        InlineKeyboardButton(text="▶️ Обработать", callback_data=f"rec_finish{id}"),
-        InlineKeyboardButton(text="Оригинал",
-                             url="".join(["https://", service_db[service]['post_url'], post_id])))
+        types.InlineKeyboardButton(text=f"{to_del} Удалить",
+                                   callback_data=post_rec_cb.new(post_id=id, action="delete")),
+        types.InlineKeyboardButton(text=emojize(":play_button:️ Обработать"),
+                                   callback_data=post_rec_cb.new(post_id=id, action="finish")),
+        types.InlineKeyboardButton(text="Оригинал",
+                                   url="".join(["https://", service_db[service]['post_url'], post_id])))
     if dupe_id:
-        rec_new_markup.row(InlineKeyboardButton(text=f"Дубликат ID:{dupe_id}",
-                                                url="".join(["https://", service_db[service]['post_url'], dupe_id])))
+        rec_new_markup.row(types.InlineKeyboardButton(text=f"Дубликат ID:{dupe_id}",
+                                                      url="".join(
+                                                          ["https://", service_db[service]['post_url'], dupe_id])))
     return rec_new_markup
 
 
+tag_fix_cb = CallbackData('tag_fix', 'tag', 'action', 'replace_to')
+
+
 def gen_tag_fix_markup(tag, suggestions):
-    rec_new_markup = InlineKeyboardMarkup()
+    rec_new_markup = types.InlineKeyboardMarkup()
     rec_new_markup.row_width = 2
     s_buttons = []
     for item in suggestions:
-        s_buttons.append(InlineKeyboardButton(text=f"🔁 Заменить на '{item}'", callback_data=f"tag_rep{tag} {item}"))
+        s_buttons.append(types.InlineKeyboardButton(text=emojize(f":repeat_button: Заменить на '{item}'"),
+                                                    callback_data=tag_fix_cb.new(tag=tag, action="replace",
+                                                                                 replace_to=item)))
 
-    rec_new_markup.add(InlineKeyboardButton(text="✏️ Переименовать", callback_data=f"tag_ren{tag}"),
-                       InlineKeyboardButton(text="❌ Удалить", callback_data=f"tag_del{tag}"))
+    rec_new_markup.add(types.InlineKeyboardButton(text=emojize(":pencil:️ Переименовать"),
+                                                  callback_data=tag_fix_cb.new(tag=tag, action="rename",
+                                                                               replace_to="none")),
+                       types.InlineKeyboardButton(text=emojize(":cross_mark: Удалить"),
+                                                  callback_data=tag_fix_cb.new(tag=tag, action="delete",
+                                                                               replace_to="none")))
     if s_buttons:
-        rec_new_markup.row(InlineKeyboardButton("Заменить на: ", callback_data="separator"))
+        rec_new_markup.row(types.InlineKeyboardButton("Заменить на: ", callback_data="separator"))
         rec_new_markup.add(*s_buttons)
     return rec_new_markup
 
 
 def gen_channel_inline(new_post, wall_id):
     text = f"{service_db[new_post['service']]['name']} {new_post['post_id']}"
-    url = f"http://{service_db[new_post['service']]['post_url']}{new_post['post_id'].split('_p')[0]}"
-    channel_markup = InlineKeyboardMarkup()
+    url = f"http://{service_db[new_post['service']]['post_url']}{new_post['post_id'].partition('_p')[0]}"
+    channel_markup = types.InlineKeyboardMarkup()
     vk_link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
     buttons = []
-    buttons.append(InlineKeyboardButton(text=text, url=url))
+    buttons.append(types.InlineKeyboardButton(text=text, url=url))
     if wall_id != -1:
-        buttons.append(InlineKeyboardButton(text="Пост в ВК", url=vk_link))
+        buttons.append(types.InlineKeyboardButton(text="Пост в ВК", url=vk_link))
     channel_markup.add(*buttons)
     return channel_markup
 
-class InlinePaginator():
-    def __init__(self, msg, data, items_per_row=5, max_rows=5):
+
+paginator_cb = CallbackData('pag', 'user_id', 'action', 'data')
+
+
+class EmptyAwaitable:
+    def __call__(self, *args, **kwargs):
+        return EmptyAwaitable()
+
+    def __await__(self):
+        return iter([None])
+
+
+class InlinePaginator:
+    def __init__(self, msg, data, user_id, items_per_row=5, max_rows=5):
         self.data = data
+        self.user_id = user_id
         self.current_page = 1
         self.items_per_row = items_per_row
         self.items_per_page = self.items_per_row * max_rows
@@ -125,15 +177,12 @@ class InlinePaginator():
         self.msg = msg
         self.bot = None
 
-    def __del__(self):
-        pass
-
-    def add_data_item(self, button_data, button_text):
+    async def add_data_item(self, button_data, button_text):
         self.data.append((button_data, button_text))
-        self.refresh()
+        await self.refresh()
 
-    def delete_data_item(self, button_data=None, button_text=None):
-        if not any([button_data, button_text]):
+    async def delete_data_item(self, button_data=None, button_text=None):
+        if not any((button_data, button_text)):
             return
         else:
             found_buttons = [item for item in self.data if (
@@ -142,85 +191,126 @@ class InlinePaginator():
             if found_buttons:
                 for item in found_buttons:
                     self.data.remove(item)
-                self.refresh()
+                await self.refresh()
                 return
             else:
                 raise ValueError("Items not found")
 
-    def refresh(self):
+    async def refresh(self):
         self.max_pages = ceil(len(self.data) / self.items_per_page)
         if self.current_page > self.max_pages:
             self.current_page = self.max_pages
-        self.show_current_page()
+        await self.show_current_page()
 
-    def show_current_page(self):
-        markup = InlineKeyboardMarkup()
+    async def switch_page(self, new_page):
+        if self.current_page != new_page:
+            self.current_page = new_page
+            await self.refresh()
+
+    async def show_current_page(self):
+        markup = types.InlineKeyboardMarkup()
         markup.row_width = self.items_per_row
         buttons = []
-        for value, text in self.data[(self.current_page - 1) * self.items_per_page:
-        self.current_page * self.items_per_page]:
-            buttons.append(InlineKeyboardButton(text=text, callback_data=f'pag_item{value}'))
+        for value, text in (
+                self.data[(self.current_page - 1) * self.items_per_page:self.current_page * self.items_per_page]):
+            buttons.append(types.InlineKeyboardButton(text=text,
+                                                      callback_data=paginator_cb.new(user_id=self.user_id,
+                                                                                     action="item",
+                                                                                     item=value)))
         markup.add(*buttons)
         nav_buttons = []
         if self.current_page > 1:
-            nav_buttons.append(InlineKeyboardButton(text="⏪" + emojize_number(1), callback_data='pag_switch1'))
-            nav_buttons.append(InlineKeyboardButton(text="◀️" + emojize_number(self.current_page - 1),
-                                                    callback_data=f'pag_switch{self.current_page - 1}'))
+            nav_buttons.append(
+                types.InlineKeyboardButton(text=emojize(":fast_reverse_button:") + emojize_number(1),
+                                           callback_data=paginator_cb.new(user_id=self.user_id, action="switch",
+                                                                          item=1)))
+            nav_buttons.append(
+                types.InlineKeyboardButton(text=emojize(":reverse_button:") + emojize_number(self.current_page - 1),
+                                           callback_data=paginator_cb.new(user_id=self.user_id, action="switch",
+                                                                          item=self.current_page - 1)))
         else:
-            nav_buttons += [InlineKeyboardButton(text="⏺", callback_data='pag_cur')] * 2
+            nav_buttons += [types.InlineKeyboardButton(text=emojize(":record_button:"),
+                                                       callback_data=paginator_cb.new(user_id=self.user_id,
+                                                                                      action="current",
+                                                                                      item="none"))] * 2
 
-        nav_buttons.append(InlineKeyboardButton(text=emojize_number(self.current_page),
-                                                callback_data=f'pag_cur{randint(0,1000000000)}'))
+        nav_buttons.append(types.InlineKeyboardButton(text=emojize_number(self.current_page),
+                                                      callback_data=paginator_cb.new(user_id=self.user_id,
+                                                                                     action="current",
+                                                                                     item="none")))
         if self.current_page < self.max_pages:
-            nav_buttons.append(InlineKeyboardButton(text="▶️" + emojize_number(self.current_page + 1),
-                                                    callback_data=f'pag_switch{self.current_page + 1}'))
-            nav_buttons.append(InlineKeyboardButton(text="️⏩" + emojize_number(self.max_pages),
-                                                    callback_data=f'pag_switch{self.max_pages}'))
+            nav_buttons.append(
+                types.InlineKeyboardButton(text=emojize(":play_button:️") + emojize_number(self.current_page + 1),
+                                           callback_data=paginator_cb.new(user_id=self.user_id, action="switch",
+                                                                          item=self.current_page + 1)))
+            nav_buttons.append(
+                types.InlineKeyboardButton(text=emojize("️:fast-forward_button:") + emojize_number(self.max_pages),
+                                           callback_data=paginator_cb.new(user_id=self.user_id, action="switch",
+                                                                          item=self.max_pages)))
         else:
-            nav_buttons += [InlineKeyboardButton(text="⏺", callback_data='pag_cur')] * 2
+            nav_buttons += [types.InlineKeyboardButton(text=emojize(":record_button:"),
+                                                       callback_data=paginator_cb.new(user_id=self.user_id,
+                                                                                      action="current",
+                                                                                      item="none"))] * 2
         markup.row(*nav_buttons)
-        markup.row(InlineKeyboardButton(text="✅ Завершить", callback_data='pag_finish'))
+        markup.row(
+            types.InlineKeyboardButton(text=emojize(":white_heavy_check_mark: Завершить"),
+                                       callback_data=paginator_cb.new(user_id=self.user_id, action="finish",
+                                                                      item="none")))
 
         if self.bot:
-            try:
-                self.bot.edit_message_reply_markup(self.msg.chat.id, self.msg.message_id, reply_markup=markup)
-            except ApiException:
-                pass
+            await bot_action(self.bot.edit_message_reply_markup)(self.msg.chat.id, self.msg.message_id,
+                                                                 reply_markup=markup)
 
-    def _navigation_process(self, call):
-        if 'pag_cur' in call.data:
-            self.refresh()
-            return
-        if 'pag_item' in call.data:
-            if self.selector:
-                self.selector(call, call.data[len('pag_item'):])
-        elif 'pag_finish' in call.data:
-            if self.bot:
-                for index, callback_handler in enumerate(self.bot.callback_query_handlers):
-                    if callback_handler['function'] == self._navigation_process:
-                        del self.bot.callback_query_handlers[index]
-                        break
-            self.bot.delete_message(call.message.chat.id, call.message.message_id)
-            self.finisher(call)
-        elif 'pag_switch' in call.data:
-            new_page = int(call.data.replace('pag_switch', ''))
-            if self.current_page != new_page:
-                self.current_page = new_page
-                self.show_current_page()
-
-    def hook_telebot(self, bot, func_item_selected, finisher=lambda f: None):
+    async def hook_bot(self, bot, func_item_selected, finisher=EmptyAwaitable()):
         self.bot = bot
         self.selector = func_item_selected
         self.finisher = finisher
-        self.navigation_process = bot.callback_query_handler(func=lambda
-            call: 'pag_' in call.data and call.message.chat.id == self.msg.chat.id and call.message.message_id == self.msg.message_id)(
-            self._navigation_process)
-
-        self.show_current_page()
+        await self.show_current_page()
 
 
 def emojize_number(num):
-    digits = {'0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣',
-              '8': '8️⃣', '9': '9️⃣'}
-    result = ''.join(digits[char] for char in str(num))
+    result = ''.join(emojize(f":keycap_{char}:") for char in str(num))
     return result
+
+
+def hook_paginators_to_dispatcher(dispatcher: Dispatcher, paginators: dict):
+    class PaginatorFilter(BoundFilter):
+        key = 'pag_owner_called'
+
+        def __init__(self, pag_owner_called: bool):
+            self.pag_owner_called = pag_owner_called
+
+        async def check(self, call: types.CallbackQuery):
+            try:
+                parsed = paginator_cb.parse(call.data)
+            except ValueError:
+                pass
+            else:
+                user_id = int(parsed['user_id'])
+                return user_id == call.from_user.id
+
+    dispatcher.filters_factory.bind(PaginatorFilter, event_handlers=[dispatcher.callback_query_handlers])
+
+    @dispatcher.callback_query_handler(paginator_cb.filter(action="current"), pag_owner_called=True)
+    async def callback_page_current(query: types.CallbackQuery, callback_data: dict):
+        current_paginator = paginators[callback_data['user_id']]
+        await current_paginator.refresh()
+
+    @dispatcher.callback_query_handler(paginator_cb.filter(action="item"), pag_owner_called=True)
+    async def callback_select_item(query: types.CallbackQuery, callback_data: dict):
+        current_paginator = paginators[callback_data['user_id']]
+        if current_paginator.selector:
+            await current_paginator.selector(query, callback_data['item'])
+
+    @dispatcher.callback_query_handler(paginator_cb.filter(action="finish"), pag_owner_called=True)
+    async def callback_finish(query: types.CallbackQuery, callback_data: dict):
+        current_paginator = paginators[callback_data['user_id']]
+        await current_paginator.bot.delete_message(query.message.chat.id, query.message.message_id)
+        await current_paginator.finisher(query)
+
+    @dispatcher.callback_query_handler(paginator_cb.filter(action="switch"), pag_owner_called=True)
+    async def callback_finish(query: types.CallbackQuery, callback_data: dict):
+        current_paginator = paginators[callback_data['user_id']]
+        new_page = int(callback_data['item'])
+        await current_paginator.switch_page(new_page)

@@ -13,11 +13,10 @@ import util
 from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message
 from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
     MONITOR_FOLDER
-from db_mng import Tag, QueueItem, HistoryItem, Pic, MonitorItem, session_scope
+from db_mng import Tag, Pic, MonitorItem, session_scope
 
 
 def check_recommendations(new_tag=None):
-
     telebot.apihelper.proxy = REQUESTS_PROXY
     if not new_tag:
         repost_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
@@ -26,16 +25,13 @@ def check_recommendations(new_tag=None):
     srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
     service = 'dan'
     with session_scope() as session:
-        queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
-                 session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
-        history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
-                   session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
+        used_pics = set((pic.service, pic.post_id) for pic
+                        in session.query(Pic).filter(Pic.history_item.isnot(None), Pic.queue_item.isnot(None)).all())
         hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
         tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
         tags = {item.tag: {'last_check': item.last_check or 0, 'missing_times': item.missing_times or 0} for item in (
             session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
                 Tag).filter_by(service=service, tag=new_tag).all())}
-    qnh = queue + history
     max_new_posts_per_tag = 20
     tags_api = 'http://' + service_db[service]['posts_api']
     login = service_db[service]['payload']['user']
@@ -44,11 +40,11 @@ def check_recommendations(new_tag=None):
     new_posts = {}
     proxies = REQUESTS_PROXY
     ses = requests.Session()
-    tags_slices = [list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5)]
+    tags_slices = (list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5))
     for (n, tags_slice) in enumerate(tags_slices, 1):
         tag_aliases = {}
         req = ses.get(tags_api.format('+'.join(
-            ['~' + quote(tag) for tag in tags_slice])) + f'+-rating:explicit&login={login}&api_key={api_key}&limit=200',
+            '~' + quote(tag) for tag in tags_slice)) + f'+-rating:explicit&login={login}&api_key={api_key}&limit=200',
                       proxies=proxies)
         try:
             posts = req.json()
@@ -67,7 +63,7 @@ def check_recommendations(new_tag=None):
             skip = any(b_tag in post['tag_string'] for b_tag in BANNED_TAGS)
             no_urls = not any([post.get('large_file_url'), post.get('file_url')])
             if skip or no_urls: continue
-            if (service, str(post_id)) in qnh or any(item in post['file_ext'] for item in ['webm', 'zip']):
+            if (service, str(post_id)) in used_pics or any(item in post['file_ext'] for item in ['webm', 'zip']):
                 continue
             if tag_aliases:
                 for tag, alias in tag_aliases.items():
@@ -75,27 +71,25 @@ def check_recommendations(new_tag=None):
             try:
                 # get particular author tag in case post have multiple
                 post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
-            except KeyError:  # post artist not in  checking slice - means database have artist old alias
+            except KeyError:  # post artist not in current tags slice - means database have artist's old alias
                 tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
-                stop = False
                 for artist in post['tag_string_artist'].split():
-                    tag_alias = [item for item in ses.get(tag_aliases_api.format(artist), proxies=proxies).json() if
-                                 item['status'] == 'active']
-                    if not tag_alias:
+                    tag_antecedents = [tag for item in ses.get(tag_aliases_api.format(artist), proxies=proxies).json()
+                                       for tag in tags_slice if
+                                       item['status'] == 'active' and tag in item['antecedent_name']]
+                    if not tag_antecedents:
                         continue
-                    for tag in tags_slice:
-                        if tag in tag_alias[0]['antecedent_name']:
-                            tag_aliases[tag] = artist
-                            post_tag = tag
-                            stop = True
-                            break
-                    if stop:
+                    else:
+                        tag = tag_antecedents.pop()
+                        tag_aliases[tag] = artist
+                        post_tag = tag
                         break
                 else:
                     send_message(srvc_msg.chat.id,
-                                 f'Алиас тега для поста {service}:{post_id} с авторами "{post["tag_string_artist"]}" не найден.\n'
+                                 f'Алиас тега для поста {service}:{post_id} с авторами '
+                                 f'"{post["tag_string_artist"]}" не найден.\n'
                                  f'Должен быть один из: {", ".join(tags_slice)}')
-                    break
+                    continue
 
             if (new_post_count[post_tag] < max_new_posts_per_tag and
                     post_id > tags[post_tag].get('last_check')):
@@ -113,7 +107,7 @@ def check_recommendations(new_tag=None):
         if (n % 5) == 0:
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                         reply_markup=markup_templates.gen_status_markup(
-                            f"{tag} [{(n*5)}/{tags_total}]",
+                            f"{tag} [{(n * 5)}/{tags_total}]",
                             f"Новых постов: {len(new_posts)}"))
         with session_scope() as session:
             for tag in tags_slice:
@@ -178,7 +172,7 @@ def check_recommendations(new_tag=None):
                 if not is_dupe:
                     hashes[new_post['hash']] = post_id
                 mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
-                                         f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
+                                     f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                      reply_markup=markup_templates.gen_rec_new_markup(pic.id, service, pic.post_id,
                                                                                       not new_post['safe'] or is_dupe,
                                                                                       hashes[new_post[
@@ -198,7 +192,7 @@ def repost_previous_monitor_check():
             delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
             new_msg = send_photo(TELEGRAM_CHANNEL_MON, mon_item.pic.file_id,
                                  caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
-                                         f"ID: {mon_item.pic.post_id}",
+                                 f"ID: {mon_item.pic.post_id}",
                                  reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
                                                                                   mon_item.pic.service,
                                                                                   mon_item.pic.post_id,

@@ -1,33 +1,31 @@
 # -*- coding: utf-8 -*-
 import os
 
-import requests
+import aiohttp
 from PIL import Image
 from bs4 import BeautifulSoup
 from imagehash import dhash
 
-import util
 from creds import service_db, REQUESTS_PROXY
 
 
-def metadata(service, post_id, pic_name=None):
+async def metadata(service, post_id, pic_name=None):
     if service == 'gel':
         service_api = 'https://' + service_db[service]['post_api']
         service_tag_api = 'https://' + service_db[service]['tag_api']
         service_login = 'https://' + service_db[service]['login_url']
         service_payload = service_db[service]['payload']
-
-        with requests.Session() as ses:
-            ses.post(service_login, data=service_payload)
-            gel_xml = ses.get(service_api + post_id)
-            try:
-                post = BeautifulSoup(gel_xml.text, 'lxml').posts.post
-            except (IndexError, NameError, AttributeError):
-                return (pic_name, '', '', '', '')
+        async with aiohttp.ClientSession() as session:
+            await session.post(service_login, data=service_payload)
+            async with session.get(service_api + post_id) as gel_xml:
+                try:
+                    post = BeautifulSoup(await gel_xml.text(), 'lxml').posts.post
+                except (IndexError, NameError, AttributeError):
+                    return (pic_name, '', '', '', '')
             pic_ext = os.path.splitext(post['sample_url'])[1]
             pic_name = service + '.' + post_id + pic_ext
-            tag_page = ses.get(service_tag_api + post['tags'])
-            tags = BeautifulSoup(tag_page.text, 'lxml').find_all('tag')
+            async with session.get(service_tag_api + post['tags']) as tag_page:
+                tags = BeautifulSoup(await tag_page.text(), 'lxml').find_all('tag')
             authors = ' '.join(['#' + x['name'] for x in tags
                                 if x['type'] == '1' and x['name'] != '' and x['name'] != 'artist_request'])
             characters = ' '.join(['#' + x.split('_(')[0] for x in tags
@@ -42,12 +40,12 @@ def metadata(service, post_id, pic_name=None):
         service_login = 'http://' + service_db[service]['login_url']
         service_payload = service_db[service]['payload']
         proxies = REQUESTS_PROXY
-        with requests.Session() as ses:
-
-            ses.headers = {'user-agent': 'OhaioPoster',
-                           'content-type': 'application/json; charset=utf-8'}
-            ses.post(service_login, data=service_payload)
-            response = ses.get(service_api.format(post_id), proxies=proxies).json()
+        async with aiohttp.ClientSession() as session:
+            headers = {'user-agent': 'OhaioPoster',
+                       'content-type': 'application/json; charset=utf-8'}
+            await session.post(service_login, data=service_payload, headers=headers)
+            async with session.get(service_api.format(post_id), proxies=proxies) as req:
+                response = await req.json()
             if response['is_banned']:
                 return ('', '', [], [], [])
             authors = ' '.join({f'#{x}' for x in response['tag_string_artist'].split()})
@@ -64,9 +62,10 @@ def metadata(service, post_id, pic_name=None):
         authors = []
         characters = []
         copyrights = []
-    return (pic_name, direct, authors, characters, copyrights)
+    return pic_name, direct, authors, characters, copyrights
 
-def usable_url(url, service):
+
+async def usable_url(url, service):
     if url.startswith('//'):
         url = "https:" + url
     elif url.startswith("/"):
@@ -74,34 +73,29 @@ def usable_url(url, service):
     return url
 
 
-def download(url, filename):
+async def download(url, filename):
     service = os.path.basename(filename).split('.')[0]
-    usable_url(url, service)
+    await usable_url(url, service)
     proxies = REQUESTS_PROXY
     headers = {'user-agent': 'OhaioPoster'}
     if service == 'pix':
         headers['Referer'] = 'https://app-api.pixiv.net/'
         proxies = {}
-    try:
-        req = requests.get(url, stream=True, proxies=proxies, headers=headers)
-    except requests.exceptions.RequestException as ex:
-        util.log_error(ex)
-        return None
-    total_length = req.headers.get('content-length', 0)
-    if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
-        im = Image.open(filename)
-        im_hash = dhash(im, hash_size=16)
-        return str(im_hash)
-    # if not total_length:  # no content length header
-    #     return False
-    try:
-        im = Image.open(req.raw)
-    except OSError:
-        return None
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, stream=True, proxies=proxies, headers=headers) as req:
+            total_length = req.headers.get('content-length', "0")
+            if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
+                im = Image.open(filename)
+                im_hash = dhash(im, hash_size=8)
+                return str(im_hash)
+            try:
+                im = Image.open(await req.read())
+            except OSError:
+                return None
     aspect = im.height / im.width
-    if not (3 >= aspect >= 0.3):
-        return None
+    if not (3 >= aspect >= 1 / 3):
+        return None  # skip pictures that are too tall or too wide
     im.thumbnail((2000, 2000))
-    im_hash = dhash(im, hash_size=16)
+    im_hash = dhash(im, hash_size=8)
     im.save(filename)
     return str(im_hash)
