@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import asyncio
+import functools
 import time
 import traceback
 
@@ -16,3 +18,9 @@ def log_error(exception, args=[], kwargs={}):
         err_file.write(f'{exception}\n\n'.upper())
         traceback.print_exc(file=err_file)
 
+
+loop = asyncio.get_event_loop()
+
+
+async def in_thread(func, *args, **kwargs):
+    return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))

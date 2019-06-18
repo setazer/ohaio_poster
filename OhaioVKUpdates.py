@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-import json
 
-import cherrypy
 import vk_requests
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import types
+from aiogram.utils.emoji import emojize
+from aiohttp import web
 
 from bot_mng import send_message
 from creds import TELEGRAM_CHANNEL_VKUPDATES, VK_GROUP_ID, VK_TOKEN
@@ -11,96 +11,93 @@ from creds import TELEGRAM_CHANNEL_VKUPDATES, VK_GROUP_ID, VK_TOKEN
 WEBHOOK_LISTEN = '0.0.0.0'
 WEBHOOK_PORT = 8237
 
-class WebhookServer(object):
-    @cherrypy.expose
-    def index(self):
-        if 'content-length' in cherrypy.request.headers and \
-                'content-type' in cherrypy.request.headers and \
-                cherrypy.request.headers['content-type'] == 'application/json':
-            length = int(cherrypy.request.headers['content-length'])
-            json_string = cherrypy.request.body.read(length).decode("utf-8")
 
-            # Эта функция обеспечивает проверку входящего сообщения
-            # bot.send_message(TELEGRAM_CHANNEL_VKUPDATES,json_string)
-            return process_request(json_string)
-        else:
-            raise cherrypy.HTTPError(403)
+async def handle(request):
+    if ('content-length' in request.headers
+            and 'content-type' in request.headers
+            and request.headers['content-type'] == 'application/json'):
+        request_body_dict = await request.json()
+        text = await process_request(request_body_dict)
+        return web.Response(text=text)
+    else:
+        return web.Response(status=403)
 
 
-def process_request(json_string):
+async def process_request(update) -> str:
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version="5.80")
-    update = json.loads(json_string)
-    if update["type"] == "confirmation":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "✅ Получен запрос от VK")
+    if update.get("type") == "confirmation":
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":white_heavy_check_mark: Получен запрос от VK"))
         return 'ad9b6a46'
-    elif update["type"] == "message_new":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, "✉️ В сообществе новое личное сообщение.",
+    elif update.get("type") == "message_new":
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":envelope: В сообществе новое личное сообщение."),
                      reply_markup=messages_link())
         return 'ok'
-    elif update["type"] == "photo_comment_new":
+    elif update.get("type") == "photo_comment_new":
         user_data = api.users.get(user_ids=update['object']['from_id'])[0]
-        send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                     f"🌄️ Новый комментарий к фотографии.\n\n{user_data['first_name']} {user_data['last_name']}:\n{update['object']['text']}",
-                     reply_markup=photo_link(update))
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                           emojize(
+                               f":sunrise_over_mountains: Новый комментарий к фотографии.\n\n{user_data['first_name']} "
+                               f"{user_data['last_name']}:\n{update['object']['text']}"),
+                           reply_markup=photo_link(update))
         return 'ok'
-    elif update["type"] == "wall_repost":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                     f"📢️ Новый репост\nhttps://vk.com/wall{update['object']['owner_id']}_{update['object']['id']}",
+    elif update.get("type") == "wall_repost":
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                           emojize(f":loudspeaker: Новый репост\nhttps://vk.com/wall"
+                                   f"{update['object']['owner_id']}_{update['object']['id']}"),
                      reply_markup=post_link(update))
         return 'ok'
-    elif update["type"] == "wall_reply_new":
+    elif update.get("type") == "wall_reply_new":
         user_data = api.users.get(user_ids=update['object']['from_id'])[0]
-        send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                     f"📃️ Новый комментарий на стене.\n\n{user_data['first_name']} {user_data['last_name']}:\n{update['object']['text']}",
-                     reply_markup=comment_link(update))
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                           emojize(f":page_with_curl: Новый комментарий на стене.\n\n{user_data['first_name']} "
+                                   f"{user_data['last_name']}:\n{update['object']['text']}"),
+                           reply_markup=comment_link(update))
         return 'ok'
-    elif update["type"] == "wall_post_new":
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"ℹ️ Новая запись на стене:\n\n{update['object']['text']}",
+    elif update.get("type") == "wall_post_new":
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(f":information: Новая запись на стене:\n\n"
+                                                               f"{update['object']['text']}"),
                      reply_markup=post_link(update))
         return 'ok'
     else:
-        send_message(TELEGRAM_CHANNEL_VKUPDATES, f"❓ Необработанный апдейт:\n\n{update}")
+        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                           emojize(f":question_mark: Необработанный апдейт:\n\n{repr(update)}"))
+        print(emojize(f":question_mark: Необработанный апдейт:\n\n{repr(update)}"))
         return 'ok'
 
 
-def comment_link(update):
+async def comment_link(update):
     sender_url = f"https://vk.com/id{update['object']['from_id']}"
-    post_url = f"https://vk.com/wall{update['object']['post_owner_id']}_{update['object']['post_id']}?reply={update['object']['id']}"
-    link_markup = InlineKeyboardMarkup()
-    link_markup.add(InlineKeyboardButton(text="Отправитель", url=sender_url),
-                    InlineKeyboardButton(text="Перейти к комментарию", url=post_url))
+    post_url = (f"https://vk.com/wall{update['object']['post_owner_id']}_"
+                f"{update['object']['post_id']}?reply={update['object']['id']}")
+    link_markup = types.InlineKeyboardMarkup()
+    link_markup.add(types.InlineKeyboardButton(text="Отправитель", url=sender_url),
+                    types.InlineKeyboardButton(text="Перейти к комментарию", url=post_url))
     return link_markup
 
 
-def post_link(update):
+async def post_link(update):
     post_url = f"https://vk.com/wall{update['object']['owner_id']}_{update['object']['id']}"
-    link_markup = InlineKeyboardMarkup()
-    link_markup.add(InlineKeyboardButton(text="Перейти к посту", url=post_url))
+    link_markup = types.InlineKeyboardMarkup()
+    link_markup.add(types.InlineKeyboardButton(text="Перейти к посту", url=post_url))
     return link_markup
 
 
-def photo_link(update):
+async def photo_link(update):
     photo_url = f"https://vk.com/photo{update['object']['photo_owner_id']}_{update['object']['photo_id']}"
-    link_markup = InlineKeyboardMarkup()
-    link_markup.add(InlineKeyboardButton(text="Перейти к фотографии", url=photo_url))
+    link_markup = types.InlineKeyboardMarkup()
+    link_markup.add(types.InlineKeyboardButton(text="Перейти к фотографии", url=photo_url))
     return link_markup
 
 
-def messages_link():
+async def messages_link():
     url = f"https://vk.com/gim{VK_GROUP_ID}"
-    link_markup = InlineKeyboardMarkup()
-    link_markup.add(InlineKeyboardButton(text="Перейти в сообщения сообщества", url=url))
+    link_markup = types.InlineKeyboardMarkup()
+    link_markup.add(types.InlineKeyboardButton(text="Перейти в сообщения сообщества", url=url))
     return link_markup
 
 
-cherrypy.config.update({
-    'engine.autoreload.on': False,
-    'server.socket_host': WEBHOOK_LISTEN,
-    'server.socket_port': WEBHOOK_PORT
+app = web.Application()
+app.add_routes([web.get('/', handle),
+                web.post('/', handle)])
 
-    # 'server.ssl_module': 'builtin',
-    # 'server.ssl_certificate': WEBHOOK_SSL_CERT,
-    # 'server.ssl_private_key': WEBHOOK_SSL_PRIV
-})
-
-cherrypy.quickstart(WebhookServer(), '/', {'/': {}})
+web.run_app(app)
