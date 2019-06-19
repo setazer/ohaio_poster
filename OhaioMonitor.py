@@ -8,7 +8,7 @@ import telebot
 from sqlalchemy.orm import joinedload
 
 import grabber
-import markup_templates
+import markups
 import util
 from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message
 from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
@@ -106,7 +106,7 @@ def check_recommendations(new_tag=None):
                     'safe': post['rating'] == "s"}
         if (n % 5) == 0:
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                        reply_markup=markup_templates.gen_status_markup(
+                        reply_markup=markups.gen_status_markup(
                             f"{tag} [{(n * 5)}/{tags_total}]",
                             f"Новых постов: {len(new_posts)}"))
         with session_scope() as session:
@@ -116,7 +116,7 @@ def check_recommendations(new_tag=None):
                     if tags[tag]['missing_times'] > 4:
                         send_message(srvc_msg.chat.id,
                                      f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
-                                     reply_markup=markup_templates.gen_del_tag_markup(tag))
+                                     reply_markup=markups.gen_del_tag_markup(tag))
                 else:
                     tags[tag]['missing_times'] = 0
                 db_tag = session.query(Tag).filter_by(tag=tag, service=service).first()
@@ -135,7 +135,7 @@ def check_recommendations(new_tag=None):
     srt_new_posts = sorted(new_posts)
     for (n, post_id) in enumerate(srt_new_posts, 1):
         edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                    reply_markup=markup_templates.gen_status_markup(
+                    reply_markup=markups.gen_status_markup(
                         f"Новых постов: {len(new_posts)}",
                         f"Обработка поста: {n}/{len(srt_new_posts)}"))
         new_post = new_posts[post_id]
@@ -173,9 +173,9 @@ def check_recommendations(new_tag=None):
                     hashes[new_post['hash']] = post_id
                 mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                      f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
-                                     reply_markup=markup_templates.gen_rec_new_markup(pic.id, service, pic.post_id,
-                                                                                      not new_post['safe'] or is_dupe,
-                                                                                      hashes[new_post[
+                                     reply_markup=markups.gen_rec_new_markup(pic.id, service, pic.post_id,
+                                                                             not new_post['safe'] or is_dupe,
+                                                                             hashes[new_post[
                                                                                           'hash']] if is_dupe else None))
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
                                                to_del=not new_post['safe'] or is_dupe)
@@ -193,10 +193,10 @@ def repost_previous_monitor_check():
             new_msg = send_photo(TELEGRAM_CHANNEL_MON, mon_item.pic.file_id,
                                  caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
                                  f"ID: {mon_item.pic.post_id}",
-                                 reply_markup=markup_templates.gen_rec_new_markup(mon_item.pic.id,
-                                                                                  mon_item.pic.service,
-                                                                                  mon_item.pic.post_id,
-                                                                                  mon_item.to_del))
+                                 reply_markup=markups.gen_rec_new_markup(mon_item.pic.id,
+                                                                         mon_item.pic.service,
+                                                                         mon_item.pic.post_id,
+                                                                         mon_item.to_del))
             if new_msg:
                 mon_item.tele_msg = new_msg.message_id
 

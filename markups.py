@@ -94,7 +94,7 @@ def gen_del_tag_markup(tag):
     return del_tag_markup
 
 
-post_rec_cb = CallbackData('post_rec', 'post_id', 'action')
+post_rec_cb = CallbackData('post_rec', 'pic_id', 'action')
 
 
 def gen_rec_new_markup(id, service, post_id, checked=False, dupe_id=None):
@@ -103,9 +103,9 @@ def gen_rec_new_markup(id, service, post_id, checked=False, dupe_id=None):
     rec_new_markup.row_width = 2
     rec_new_markup.add(
         types.InlineKeyboardButton(text=f"{to_del} Удалить",
-                                   callback_data=post_rec_cb.new(post_id=id, action="delete")),
+                                   callback_data=post_rec_cb.new(pic_id=id, action="delete")),
         types.InlineKeyboardButton(text=emojize(":play_button:️ Обработать"),
-                                   callback_data=post_rec_cb.new(post_id=id, action="finish")),
+                                   callback_data=post_rec_cb.new(pic_id=id, action="finish")),
         types.InlineKeyboardButton(text="Оригинал",
                                    url="".join(["https://", service_db[service]['post_url'], post_id])))
     if dupe_id:
@@ -152,15 +152,7 @@ def gen_channel_inline(new_post, wall_id):
     return channel_markup
 
 
-paginator_cb = CallbackData('pag', 'user_id', 'action', 'data')
-
-
-class EmptyAwaitable:
-    def __call__(self, *args, **kwargs):
-        return EmptyAwaitable()
-
-    def __await__(self):
-        return iter([None])
+paginator_cb = CallbackData('pag', 'user_id', 'action', 'item')
 
 
 class InlinePaginator:
@@ -169,11 +161,10 @@ class InlinePaginator:
         self.user_id = user_id
         self.current_page = 1
         self.items_per_row = items_per_row
-        self.items_per_page = self.items_per_row * max_rows
+        self.items_per_page = items_per_row * max_rows
         self.max_pages = ceil(len(self.data) / self.items_per_page)
-        self.navigation_process = None
-        self.selector = None
-        self.finisher = None
+        self.on_select = None
+        self.on_finish = None
         self.msg = msg
         self.bot = None
 
@@ -185,6 +176,7 @@ class InlinePaginator:
         if not any((button_data, button_text)):
             return
         else:
+            # поиск с условием "и" при указании обоих аргументов, и "или" при указании только одного
             found_buttons = [item for item in self.data if (
                 (item[0] == button_data and item[1] == button_text) if all([button_data, button_text]) else (
                         item[0] == button_data or item[1] == button_text))]
@@ -210,15 +202,20 @@ class InlinePaginator:
     async def show_current_page(self):
         markup = types.InlineKeyboardMarkup()
         markup.row_width = self.items_per_row
+        # блок кнопок с данными
         buttons = []
-        for value, text in (
-                self.data[(self.current_page - 1) * self.items_per_page:self.current_page * self.items_per_page]):
+        cur_page = self.current_page
+        items_per_page = self.items_per_page
+        cur_page_slice = self.data[(cur_page - 1) * items_per_page:cur_page * items_per_page]
+        for value, text in cur_page_slice:
             buttons.append(types.InlineKeyboardButton(text=text,
                                                       callback_data=paginator_cb.new(user_id=self.user_id,
                                                                                      action="item",
                                                                                      item=value)))
         markup.add(*buttons)
         nav_buttons = []
+        # первые две кнопки навигации
+        # плейсхолдеры на первой странице, "к первой" и "предыдущая" в противном случае
         if self.current_page > 1:
             nav_buttons.append(
                 types.InlineKeyboardButton(text=emojize(":fast_reverse_button:") + emojize_number(1),
@@ -233,11 +230,14 @@ class InlinePaginator:
                                                        callback_data=paginator_cb.new(user_id=self.user_id,
                                                                                       action="current",
                                                                                       item="none"))] * 2
-
+        # кнопка текущей страницы
         nav_buttons.append(types.InlineKeyboardButton(text=emojize_number(self.current_page),
                                                       callback_data=paginator_cb.new(user_id=self.user_id,
                                                                                      action="current",
                                                                                      item="none")))
+
+        # последние две кнопки с навигацией
+        # плейсхолдеры на последней странице, "вперёд" и "к последней" в противном случае
         if self.current_page < self.max_pages:
             nav_buttons.append(
                 types.InlineKeyboardButton(text=emojize(":play_button:️") + emojize_number(self.current_page + 1),
@@ -262,18 +262,24 @@ class InlinePaginator:
             await bot_action(self.bot.edit_message_reply_markup)(self.msg.chat.id, self.msg.message_id,
                                                                  reply_markup=markup)
 
-    async def hook_bot(self, bot, func_item_selected, finisher=EmptyAwaitable()):
+    # подвязка пагинатора к боту для указания конкретных вызываемых функций
+    # при выборе элемента и завершении работы с пагинатором
+    async def hook_bot(self, bot, func_on_select, func_on_finish=None):
         self.bot = bot
-        self.selector = func_item_selected
-        self.finisher = finisher
+        self.on_select = func_on_select
+        self.on_finish = func_on_finish
         await self.show_current_page()
 
 
+# цифры как эмодзи
 def emojize_number(num):
     result = ''.join(emojize(f":keycap_{char}:") for char in str(num))
     return result
 
 
+# подвязка диспатчера к словарю в котором должны храниться пагинаторы
+# {user_id:InlinePaginator}
+# хендлеры диспатчера обращаются к словарю для вызова конкретных методов пагинаторов
 def hook_paginators_to_dispatcher(dispatcher: Dispatcher, paginators: dict):
     class PaginatorFilter(BoundFilter):
         key = 'pag_owner_called'
@@ -300,14 +306,16 @@ def hook_paginators_to_dispatcher(dispatcher: Dispatcher, paginators: dict):
     @dispatcher.callback_query_handler(paginator_cb.filter(action="item"), pag_owner_called=True)
     async def callback_select_item(query: types.CallbackQuery, callback_data: dict):
         current_paginator = paginators[callback_data['user_id']]
-        if current_paginator.selector:
-            await current_paginator.selector(query, callback_data['item'])
+        if current_paginator.on_select:
+            await current_paginator.on_select(query, callback_data['item'])
 
     @dispatcher.callback_query_handler(paginator_cb.filter(action="finish"), pag_owner_called=True)
     async def callback_finish(query: types.CallbackQuery, callback_data: dict):
         current_paginator = paginators[callback_data['user_id']]
         await current_paginator.bot.delete_message(query.message.chat.id, query.message.message_id)
-        await current_paginator.finisher(query)
+        if current_paginator.on_finish:
+            await current_paginator.on_finish(query)
+        del paginators[callback_data['user_id']]
 
     @dispatcher.callback_query_handler(paginator_cb.filter(action="switch"), pag_owner_called=True)
     async def callback_finish(query: types.CallbackQuery, callback_data: dict):

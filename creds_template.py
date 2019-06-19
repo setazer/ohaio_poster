@@ -39,7 +39,7 @@ WEBHOOK_SSL_PRIV = path_join(getcwd(),
                              'webhook_pkey.pem')  # Generate it with "openssl req -new -x509 -days 3650 -key webhook_pkey.pem -out webhook_cert.pem"
 WEBHOOK_URL_BASE = f"https://{WEBHOOK_HOST}:{WEBHOOK_PORT}"
 WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
-
+WEBHOOK_URL = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
 # Misc
 QUEUE_LIMIT = 240
 REQUESTS_PROXY = None  # "http://proxy.host:1234" or "socks5://proxy.host:1234"

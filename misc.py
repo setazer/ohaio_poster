@@ -9,7 +9,7 @@ import grabber
 from bot_mng import send_message, edit_markup
 from creds import VK_TOKEN, VK_GROUP_ID, service_db, REQUESTS_PROXY, QUEUE_FOLDER, OWNER_ID, TELEGRAM_CHANNEL_MON
 from db_mng import session_scope, Setting, Tag, Pic, QueueItem
-from markup_templates import gen_status_markup
+from markups import gen_status_markup
 
 
 def sync_num_photos():

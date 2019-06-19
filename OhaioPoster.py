@@ -6,12 +6,11 @@ import os
 
 import pytumblr
 import requests
-import telebot
 import vk_requests
 from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import func
 
-import markup_templates
+import markups
 import util
 from bot_mng import send_photo, send_message
 from creds import TELEGRAM_CHANNEL, OWNER_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, VK_TOKEN, \
@@ -201,10 +200,10 @@ def main(log):
     log.debug('Posting to Telegram')
     if file_id:
         send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=file_id, caption=tel_msg,
-                   reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
+                   reply_markup=markups.gen_channel_inline(new_post, wall_id))
     else:
         send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=QUEUE_FOLDER + new_post['pic_name'], caption=tel_msg,
-                   reply_markup=markup_templates.gen_channel_inline(new_post, wall_id))
+                   reply_markup=markups.gen_channel_inline(new_post, wall_id))
     try:
         post_to_tumblr(new_post)
     except Exception as ex:

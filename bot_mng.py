@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import time
 from functools import wraps
 
 import aiogram
+import datetime.datetime as dt
 from aiogram import types
 from aiogram.utils import exceptions
 
@@ -14,8 +16,10 @@ log = logging.getLogger('ohaioposter')
 loop = asyncio.get_event_loop()
 bot = aiogram.Bot(TELEGRAM_TOKEN, proxy=REQUESTS_PROXY)
 dp = aiogram.Dispatcher(bot, loop=loop)
-
-
+bot.start_time = dt.fromtimestamp(time.perf_counter())
+bot.users = {}
+bot.paginators = {}
+bot.error_msg = None
 # wrappers
 def bot_action(func):
     @wraps(func)
