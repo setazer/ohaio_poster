@@ -308,6 +308,7 @@ def hook_paginators_to_dispatcher(dispatcher: Dispatcher, paginators: dict):
         current_paginator = paginators[callback_data['user_id']]
         if current_paginator.on_select:
             await current_paginator.on_select(query, callback_data['item'])
+            await current_paginator.refresh()
 
     @dispatcher.callback_query_handler(paginator_cb.filter(action="finish"), pag_owner_called=True)
     async def callback_finish(query: types.CallbackQuery, callback_data: dict):
