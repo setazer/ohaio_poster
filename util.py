@@ -22,7 +22,6 @@ def log_error(exception, args=[], kwargs={}):
 
 _executor = ThreadPoolExecutor(10)
 
-
 def human_readable(delta):
     attrs = ['years', 'months', 'days', 'hours', 'minutes', 'seconds']
     date_parts = ["Лет", "Месяцев", "Дней", "Часов", "Минут", "Секунд"]

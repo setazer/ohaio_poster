@@ -115,24 +115,24 @@ def gen_rec_new_markup(id, service, post_id, checked=False, dupe_id=None):
     return rec_new_markup
 
 
-tag_fix_cb = CallbackData('tag_fix', 'tag', 'action', 'replace_to')
+tag_fix_cb = CallbackData('tag_fix', 'service', 'tag', 'action', 'replace_to')
 
 
-def gen_tag_fix_markup(tag, suggestions):
+def gen_tag_fix_markup(service, tag, suggestions):
     rec_new_markup = types.InlineKeyboardMarkup()
     rec_new_markup.row_width = 2
     s_buttons = []
     for item in suggestions:
         s_buttons.append(types.InlineKeyboardButton(text=emojize(f":repeat_button: Заменить на '{item}'"),
-                                                    callback_data=tag_fix_cb.new(tag=tag, action="replace",
-                                                                                 replace_to=item)))
+                                                    callback_data=tag_fix_cb.new(service=service, tag=tag,
+                                                                                 action="replace", replace_to=item)))
 
     rec_new_markup.add(types.InlineKeyboardButton(text=emojize(":pencil:️ Переименовать"),
-                                                  callback_data=tag_fix_cb.new(tag=tag, action="rename",
-                                                                               replace_to="none")),
+                                                  callback_data=tag_fix_cb.new(service=service, tag=tag,
+                                                                               action="rename", replace_to="none")),
                        types.InlineKeyboardButton(text=emojize(":cross_mark: Удалить"),
-                                                  callback_data=tag_fix_cb.new(tag=tag, action="delete",
-                                                                               replace_to="none")))
+                                                  callback_data=tag_fix_cb.new(service=service, tag=tag,
+                                                                               action="delete", replace_to="none")))
     if s_buttons:
         rec_new_markup.row(types.InlineKeyboardButton("Заменить на: ", callback_data="separator"))
         rec_new_markup.add(*s_buttons)

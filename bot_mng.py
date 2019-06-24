@@ -2,11 +2,13 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime as dt
 from functools import wraps
 
 import aiogram
-import datetime.datetime as dt
 from aiogram import types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher.filters.state import StatesGroup, State
 from aiogram.utils import exceptions
 
 from creds import TELEGRAM_TOKEN, REQUESTS_PROXY
@@ -15,11 +17,22 @@ from creds import TELEGRAM_TOKEN, REQUESTS_PROXY
 log = logging.getLogger('ohaioposter')
 loop = asyncio.get_event_loop()
 bot = aiogram.Bot(TELEGRAM_TOKEN, proxy=REQUESTS_PROXY)
-dp = aiogram.Dispatcher(bot, loop=loop)
+storage = MemoryStorage()
+dp = aiogram.Dispatcher(bot, loop=loop, storage=storage)
 bot.start_time = dt.fromtimestamp(time.perf_counter())
 bot.users = {}
 bot.paginators = {}
 bot.error_msg = None
+
+
+class NewNameSetup(StatesGroup):
+    new_name = State()
+
+
+class LimitSetup(StatesGroup):
+    user = State()
+    limit = State()
+
 # wrappers
 def bot_action(func):
     @wraps(func)

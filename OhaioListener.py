@@ -6,10 +6,10 @@ import os
 import re
 import sys
 import time
+from datetime import datetime as dt
 from functools import wraps
 
 import aiohttp
-import datetime.datetime as dt
 import dateutil.relativedelta as rd
 import math
 import pixivpy3
@@ -24,7 +24,7 @@ from sqlalchemy.orm import joinedload
 import grabber
 import markups
 from OhaioMonitor import check_recommendations
-from bot_mng import bot, dp
+from bot_mng import bot, dp, NewNameSetup, LimitSetup
 from bot_mng import send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, send_document
 from creds import *
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_scope, Setting
@@ -65,7 +65,7 @@ def load_users():
                      session.query(User.user_id, User.access, User.limit).all()}
     if not bot.users:
         bot.users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
-    log.debug(f'Loaded bot.users: {", ".join(str(user) for user in bot.users)}')
+    log.debug(f'Loaded users: {", ".join(str(user) for user in bot.users)}')
 
 
 def save_users():
@@ -73,7 +73,7 @@ def save_users():
         for user, userdata in bot.users.items():
             db_user = User(user_id=user, access=userdata['access'], limit=userdata['limit'])
             session.merge(db_user)
-    log.debug("bot.users saved")
+    log.debug("Users saved")
 
 
 log.debug("Initializing bot")
@@ -115,6 +115,7 @@ async def stop(message):
 
 
 def is_new_shutdown(chat_id, message_id) -> bool:
+    # TODO ASYNC SQLA
     with session_scope() as session:
         last_shutdown = session.query(Setting).filter_by(setting='last_shutdown').first()
         if not last_shutdown:
@@ -142,12 +143,13 @@ async def shutdown(message):
 @dp.message_handler(ChatType.is_private, commands=['uptime'])
 @access(1)
 async def uptime(message):
-    cur_time = dt.datetime.fromtimestamp(time.perf_counter())
+    cur_time = dt.fromtimestamp(time.perf_counter())
     diff = ' '.join(human_readable(rd.relativedelta(cur_time, bot.start_time)))
     await send_message(message.chat.id, "Бот работает уже:\n" + diff)
 
 
 def get_user_limits():
+    # TODO ASYNC SQLA
     with session_scope() as session:
         db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.limit} for
                     user in session.query(User).all()}
@@ -159,23 +161,29 @@ def get_user_limits():
 async def set_limit(message):
     # TODO ASYNC SQLA
     db_users = await in_thread(get_user_limits)
+    LimitSetup.user.set()
     await send_message(message.chat.id, "Выберите пользователя для изменения лимита:",
                        reply_markup=markups.gen_user_limit_markup(db_users))
 
 
-async def change_limit(message, user=None):
+@dp.message_handler(state=LimitSetup.limit)
+async def change_limit(message, state):
     if message.text.isdigit():
-        new_limit = int(message.text)
-        bot.users[user]['limit'] = new_limit
-        await in_thread(save_users)
-        await send_message(message.chat.id, "Новый лимит установлен.")
-        if message.from_user.id != OWNER_ID:
-            await say_to_owner(f"Новый лимит установлен для пользователя {user}:{new_limit}.")
+        with state.proxy() as data:
+            user = data['user']
+            new_limit = int(message.text)
+            bot.users[user]['limit'] = new_limit
+            await in_thread(save_users)
+            await send_message(message.chat.id, "Новый лимит установлен.")
+            if message.from_user.id != OWNER_ID:
+                await say_to_owner(f"Новый лимит установлен для пользователя {user}:{new_limit}.")
+        state.finish()
     else:
         await send_message(message.chat.id, "Неверное значение лимита. Ожидается число.")
 
 
 def get_posts_stats():
+    # TODO ASYNC SQLA
     with session_scope() as session:
         post_stats = {f"{sender}: {count}/{bot.users[sender]['limit']}" for sender, count in
                       session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(
@@ -192,18 +200,48 @@ async def stats(message):
     await send_message(message.chat.id, msg)
 
 
-# TODO refilling monitor
-@dp.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
-@access(2)
-def refill_monitor(message):
-    log.debug("refill started")
+def get_used_pics():
+    # TODO ASYNC SQLA
     with session_scope() as session:
-        queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
-                 session.query(QueueItem).options(joinedload(QueueItem.pic)).all()]
-        history = [(history_item.pic.service, history_item.pic.post_id) for history_item in
-                   session.query(HistoryItem).options(joinedload(HistoryItem.pic)).all()]
+        used_pics = set((pic.service, pic.post_id) for pic in
+                        session.query(Pic).filter(Pic.history_item.isnot(None), Pic.queue_item.isnot(None)).all())
+    return used_pics
+
+
+def clean_monitor():
+    # TODO ASYNC SQLA
+    with session_scope() as session:
         monitor = session.query(MonitorItem)
         monitor.delete(synchronize_session=False)
+
+
+def save_new_pic(entry, service, post_id):
+    # TODO ASYNC SQLA
+    with Image.open(MONITOR_FOLDER + entry) as im:
+        (width, height) = im.size
+    with session_scope() as session:
+        pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+        if not pic_item:
+            (*_, authors, characters, copyrights) = await grabber.metadata(service, post_id)
+            pic_item = Pic(service=service, post_id=post_id,
+                           authors=authors,
+                           chars=characters,
+                           copyright=copyrights)
+            session.add(pic_item)
+            session.flush()
+            session.refresh(pic_item)
+        mon_msg = await send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo_filename=MONITOR_FOLDER + entry,
+                                   caption=f'ID: {post_id}\n{width}x{height}',
+                                   reply_markup=markups.gen_rec_new_markup(pic_item.id, service,
+                                                                           post_id))
+        pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
+
+
+@dp.message_handler(commands=['remonitor'], func=lambda m: m.chat.type == "private")
+@access(2)
+async def refill_monitor(message):
+    log.debug("refill started")
+    used_pics = await in_thread(get_used_pics)
     for entry in os.listdir(MONITOR_FOLDER):
         if os.path.isfile(MONITOR_FOLDER + entry):
             (name, ext) = os.path.splitext(entry)
@@ -212,39 +250,18 @@ def refill_monitor(message):
                     (service, post_id) = name.split('.')
                 except ValueError:
                     continue
-                if (service, post_id) in queue:
-                    log.debug(f"{entry} in queue")
-                    os.remove(MONITOR_FOLDER + entry)
+                if (service, post_id) in used_pics:
+                    log.debug(f"{entry} was before")
+                    os.remove(f"{MONITOR_FOLDER}{entry}")
                     continue
-                elif (service, post_id) in history:
-                    log.debug(f"{entry} in history")
-                    os.remove(MONITOR_FOLDER + entry)
                 else:
                     log.debug(f"{entry} not found, recreating")
-                    with Image.open(MONITOR_FOLDER + entry) as im:
-                        (width, height) = im.size
-
-                    with session_scope() as session:
-                        pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
-                        if not pic_item:
-                            (*_, authors, characters, copyrights) = grabber.metadata(service, post_id)
-                            pic_item = Pic(service=service, post_id=post_id,
-                                           authors=authors,
-                                           chars=characters,
-                                           copyright=copyrights)
-                            session.add(pic_item)
-                            session.flush()
-                            session.refresh(pic_item)
-                        mon_msg = send_photo(chat_id=TELEGRAM_CHANNEL_MON, photo_filename=MONITOR_FOLDER + entry,
-                                             caption=f'ID: {post_id}\n{width}x{height}',
-                                             reply_markup=markups.gen_rec_new_markup(pic_item.id, service,
-                                                                                     post_id))
-                        pic_item.monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
-    send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
+                    await in_thread(save_new_pic, entry=entry, service=service, post_id=post_id)
+    await send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
 
 @access(1)
-async def delete_callback(call, data):
+def delete_callback(call, data):
     with session_scope() as session:
         queue_item = session.query(QueueItem).options(joinedload(QueueItem.pic)).filter_by(id=int(data)).first()
         bot.paginators[(call.message.chat.id, call.message.message_id)].delete_data_item(int(data))
@@ -326,18 +343,6 @@ def valid_artist_name(name):
     return pat.match(name)
 
 
-def move_back_to_mon():
-    with session_scope() as session:
-        mon_items = session.query(MonitorItem).all()
-        q_items = [item.pic_name for item in session.query(QueueItem).all()]
-        for mon_item in mon_items:
-            if not os.path.exists(MONITOR_FOLDER + mon_item.pic_name):
-                if os.path.exists(QUEUE_FOLDER + mon_item.pic_name) and not mon_item.pic_name in q_items:
-                    os.rename(QUEUE_FOLDER + mon_item.pic_name, MONITOR_FOLDER + mon_item.pic_name)
-                else:
-                    session.delete(mon_item)
-
-
 @dp.callback_query_handler(markups.user_manager_cb.filter(action='allow'))
 @access(1)
 async def callback_user_allow(call, callback_data):
@@ -388,6 +393,18 @@ async def callback_mark_for_deletion(call, callback_data):
     service, post_id, checked = await in_thread(mark_post_for_deletion, pic_id=pic_id)
     await edit_markup(call.message.chat.id, call.message.message_id,
                       reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id, checked))
+
+
+def move_back_to_mon():
+    with session_scope() as session:
+        mon_items = session.query(MonitorItem).all()
+        q_items = [item.pic_name for item in session.query(QueueItem).all()]
+        for mon_item in mon_items:
+            if not os.path.exists(MONITOR_FOLDER + mon_item.pic_name):
+                if os.path.exists(QUEUE_FOLDER + mon_item.pic_name) and not mon_item.pic_name in q_items:
+                    os.rename(QUEUE_FOLDER + mon_item.pic_name, MONITOR_FOLDER + mon_item.pic_name)
+                else:
+                    session.delete(mon_item)
 
 
 # TODO finish monithor check
@@ -463,7 +480,7 @@ async def callback_tag_fix(call, callback_data):
             msg += f"Тег: {name}\nАльтернативные имена:{alt_names.replace(tag, f'>{tag}<')}\n\n"
     msg += f"Что делать с тегом '{tag}'?"
     await send_message(call.from_user.id, msg,
-                       reply_markup=markups.gen_tag_fix_markup(tag, alter_names.keys()))
+                       reply_markup=markups.gen_tag_fix_markup(service, tag, alter_names.keys()))
 
 
 def replace_tag(tag, alt_tag):
@@ -498,31 +515,36 @@ async def callback_tag_delete(call, callback_data):
     await delete_message(call.message.chat.id, call.message.message_id)
 
 
-def rename_tag_receiver(message):
+def rename_tag(service, old_name, new_name):
+    with session_scope() as session:
+        tag_item = session.query(Tag).filter_by(tag=old_name, service=service).first()
+        tag_item.tag = new_name
+
+
+@dp.message_handler(state=NewNameSetup.new_name)
+async def rename_tag_receiver(message, state):
     new_tag = message.text
     if not valid_artist_name(new_tag):
-        send_message(message.chat.id, "Невалидное имя для тега!")
+        await send_message(message.chat.id, "Невалидное имя для тега!")
         return
-    if message.from_user.id in next_steps:
-        old_tag, service = next_steps[message.from_user.id]
-        with session_scope() as session:
-            tag_item = session.query(Tag).filter_by(tag=old_tag, service=service).first()
-            tag_item.tag = new_tag
-        send_message(message.chat.id, "Тег обновлён.")
-        del next_steps[message.from_user.id]
-    else:
-        send_message(message.chat.id,
-                     "Бот почему-то ожидал ответа на переименование тега, но данных о заменяемом теге нет.")
+    async with state.proxy() as data:
+        old_tag = data['old_tag']
+        service = data['service']
+        await in_thread(rename_tag, service=service, old_name=old_tag, new_name=new_tag)
+        await send_message(message.chat.id, "Тег обновлён.")
+        data.state = None
 
 
 @dp.callback_query_handler(markups.tag_fix_cb.filter(action='rename'))
 @access(1)
-async def callback_tag_rename(call, callback_data):
+async def callback_tag_rename(call, callback_data, state):
     tag = callback_data['tag']
-    msg = send_message(call.message.chat.id, "Тег на замену:")
-    # TODO FSM for tag renaming
-    # next_steps[call.from_user.id] = (service, tag)
-    # bot.register_next_step_handler(msg, rename_tag_receiver)
+    service = callback_data['service']
+    await send_message(call.message.chat.id, "Тег на замену:")
+    await NewNameSetup.new_name.set()
+    async with state.proxy() as data:
+        data['old_tag'] = tag
+        data['service'] = service
 
 
 def clear_history():
@@ -541,14 +563,15 @@ async def callback_rebuild_history(call, callback_data):
         await delete_message(call.message.chat.id, call.message.message_id)
 
 
-@dp.callback_query_handler(markups.limit_cb.filter())
+@dp.callback_query_handler(markups.limit_cb.filter(), state=LimitSetup.user)
 @access(1)
-async def callback_set_limit(call, callback_data):
-    user = callback_data['user_id']
+async def callback_set_limit(call, callback_data, state):
+    user = int(callback_data['user_id'])
     await delete_message(call.message.chat.id, call.message.message_id)
-    msg = await send_message(call.message.chat.id, "Новый лимит:")
-    # TODO FSM for limit setup
-    # bot.register_next_step_handler(msg, change_limit, user=int(user))
+    with state.proxy() as data:
+        data['user'] = user
+    await LimitSetup.next()
+    await send_message(call.message.chat.id, "Новый лимит:")
 
 
 def delete_duplicate(service, post_id):
@@ -625,6 +648,7 @@ async def check_queue(message):
 
 
 def get_delete_queue():
+    # TODO ASYNC SQLA
     with session_scope() as session:
         queue = [(queue_item.id, f"{queue_item.pic.service}:{queue_item.pic.post_id}") for queue_item in
                  session.query(QueueItem).options(joinedload(QueueItem.pic)).order_by(QueueItem.id).all()]
@@ -638,7 +662,7 @@ async def delete_queue(message):
     if queue:
         msg = await send_message(message.chat.id, "Что удаляем?")
         bot.paginators[(msg.chat.id, msg.message_id)] = InlinePaginator(msg, queue, message.from_user.id, 3)
-        bot.paginators[(msg.chat.id, msg.message_id)].hook_bot(bot, delete_callback)
+        bot.paginators[(msg.chat.id, msg.message_id)].hook_bot(bot, in_thread(delete_callback))
     else:
         await send_message(message.chat.id, "Очередь пуста.")
 
@@ -875,8 +899,8 @@ def queue_picture(sender, service, post_id):
                          reply_markup=markups.gen_dupe_markup(service, post_id) if is_dupe else None)
             if sender.id != OWNER_ID:
                 say_to_owner(
-                    f"Новая пикча ID {post_id} ({service_db[service][
-                        'name']}) добавлена пользователем {sender.username}.\n"
+                    f"Новая пикча ID {post_id} ({service_db[service]['name']}) "
+                    f"добавлена пользователем {sender.username}.\n"
                     f"В персональной очереди: {user_total + 1}/{bot.users[sender.id]['limit']}.\n"
                     f"Всего пикч: {pics_total + 1}.")
         else:
@@ -886,7 +910,16 @@ def queue_picture(sender, service, post_id):
             session.rollback()
 
 
+def get_bot_admins():
+    with session_scope() as session:
+        admins = [user for user, in session.query(User.user_id).filter(User.access >= 1).all()]
+    return admins
+
+
 async def on_startup(dp):
+    admins = await in_thread(get_bot_admins)
+    for admin in admins:
+        await send_message(admin, "I'm alive!", disable_notification=True)
     await bot.set_webhook(WEBHOOK_URL)
 
 
@@ -894,10 +927,6 @@ async def on_shutdown(app):
     # Remove webhook.
     await bot.delete_webhook()
 
-
-with session_scope() as session:
-    for user, in session.query(User.user_id).filter(User.access >= 1).all():
-        send_message(user, "I'm alive!", disable_notification=True)
 
 if __name__ == '__main__':
     start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
