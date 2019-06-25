@@ -18,6 +18,7 @@ import vk_requests
 from PIL import Image, ImageOps, ImageDraw, ImageFont
 from aiogram import types
 from aiogram.types import ChatType
+from aiogram.utils import executor
 from aiogram.utils.executor import start_webhook
 from sqlalchemy.orm import joinedload
 
@@ -118,6 +119,12 @@ async def uptime(message):
     cur_time = dt.fromtimestamp(time.perf_counter())
     diff = ' '.join(human_readable(rd.relativedelta(cur_time, bot.start_time)))
     await send_message(message.chat.id, "Бот работает уже:\n" + diff)
+
+
+@dp.message_handler(ChatType.is_channel, commands=['whereami'])
+@bot_access(1)
+async def whereami(message):
+    await send_message(message.chat.id, f"{message.chat.id}\n{message.message_id}")
 
 
 @dp.message_handler(ChatType.is_private, commands=['set_limit'])
@@ -721,10 +728,14 @@ async def queue_picture(sender, service, post_id):
                            f"Заглушка роскомнадзора? Отменено.")
 
 
-async def on_startup(dp):
+async def notify_admins(text):
     admins = await in_thread(get_bot_admins)
     for admin in admins:
-        await send_message(admin, "I'm alive!", disable_notification=True)
+        await send_message(admin, text, disable_notification=True)
+
+
+async def on_startup(dp):
+    await notify_admins("I'm alive!")
     await bot.set_webhook(WEBHOOK_URL)
 
 
@@ -733,8 +744,12 @@ async def on_shutdown(app):
 
 
 if __name__ == '__main__':
-    start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
-                  skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
+    if script_args.debugging:
+        asyncio.run(notify_admins("I'm alive!"))
+        executor.start_polling(dp, reset_webhook=True)
+    else:
+        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
+                      skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
 
 
 def get_monitor_before_id(pic_id):

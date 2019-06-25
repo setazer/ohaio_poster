@@ -200,11 +200,11 @@ def get_used_pics(include_history=True, include_queue=False, include_monitor=Fal
     with session_scope() as session:
         query = session.query(Pic)
         if include_history:
-            query = query.filter(Pic.history_item.isnot(None))
+            query = query.filter(Pic.history_item != None)
         if include_queue:
-            query = query.filter(Pic.queue_item.isnot(None))
+            query = query.filter(Pic.queue_item != None)
         if include_monitor:
-            query = query.filter(Pic.monitor_item.isnot(None))
+            query = query.filter(Pic.monitor_item != None)
         used_pics = set((pic.service, pic.post_id) for pic in query.all())
     return used_pics
 

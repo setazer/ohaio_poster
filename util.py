@@ -20,7 +20,7 @@ def log_error(exception, args=[], kwargs={}):
         traceback.print_exc(file=err_file)
 
 
-_executor = ThreadPoolExecutor(10)
+_executor = ThreadPoolExecutor(20)
 
 
 def human_readable(delta):
