@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
+import logging
+import os
 from contextlib import contextmanager
 
 import sqlalchemy
-from sqlalchemy import Column, Integer, String, Boolean, Sequence, UniqueConstraint, PrimaryKeyConstraint, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Sequence, UniqueConstraint, PrimaryKeyConstraint, ForeignKey, \
+    func
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.inspection import inspect
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import sessionmaker, relationship, joinedload
 
-from creds import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
+from bot_mng import bot
+from creds import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME, OWNER_ID
+from creds_template import MONITOR_FOLDER, QUEUE_FOLDER, SERVICE_DEFAULT, QUEUE_LIMIT
 
 Base = declarative_base()
 
@@ -190,6 +195,25 @@ def session_scope():
 #         ins(service, post_id, wall_id)
 #
 #
+
+def get_used_pics(include_history=True, include_queue=False, include_monitor=False):
+    with session_scope() as session:
+        query = session.query(Pic)
+        if include_history:
+            query = query.filter(Pic.history_item.isnot(None))
+        if include_queue:
+            query = query.filter(Pic.queue_item.isnot(None))
+        if include_monitor:
+            query = query.filter(Pic.monitor_item.isnot(None))
+        used_pics = set((pic.service, pic.post_id) for pic in query.all())
+    return used_pics
+
+
+def save_pic(new_pic):
+    with session_scope() as session:
+        session.add(new_pic)
+
+
 def dump_db():
     sep_line = "@@@@@@@@@@\n"
     with session_scope() as session, open('dump.db', 'w') as db:
@@ -271,3 +295,243 @@ def load_db():
 
 # dump_db()
 # load_db()
+def get_user_limits():
+    with session_scope() as session:
+        db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.limit} for
+                    user in session.query(User).all()}
+        return db_users
+
+
+def get_posts_stats():
+    with session_scope() as session:
+        post_stats = {f"{sender}: {count}/{bot.users[sender]['limit']}" for sender, count in
+                      session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(
+                          QueueItem.sender).all()}
+        return post_stats
+
+
+def clean_monitor():
+    with session_scope() as session:
+        monitor = session.query(MonitorItem)
+        monitor.delete(synchronize_session=False)
+
+
+def save_monitor_pic(pic_item):
+    with session_scope() as session:
+        session.add(pic_item)
+        session.flush()
+        session.refresh(pic_item)
+        return pic_item.id
+
+
+def is_pic_exists(service, post_id):
+    with session_scope() as session:
+        pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+        return bool(pic_item)
+
+
+def mark_post_for_deletion(pic_id):
+    with session_scope() as session:
+        mon_item = session.query(MonitorItem).filter_by(pic_id=pic_id).first()
+        checked = not mon_item.to_del
+        service = mon_item.pic.service
+        post_id = mon_item.pic.post_id
+        mon_item.to_del = checked
+    return service, post_id, checked
+
+
+def move_back_to_mon():
+    with session_scope() as session:
+        mon_items = session.query(MonitorItem).all()
+        q_items = [item.pic_name for item in session.query(QueueItem).all()]
+        for mon_item in mon_items:
+            if not os.path.exists(MONITOR_FOLDER + mon_item.pic_name):
+                if os.path.exists(QUEUE_FOLDER + mon_item.pic_name) and mon_item.pic_name not in q_items:
+                    os.rename(QUEUE_FOLDER + mon_item.pic_name, MONITOR_FOLDER + mon_item.pic_name)
+                else:
+                    session.delete(mon_item)
+
+
+def delete_pic_by_id(pic_id):
+    with session_scope() as session:
+        pic = session.query(Pic).filter_by(id=pic_id).first()
+        session.delete(pic)
+
+
+def replace_tag(tag, alt_tag):
+    service = SERVICE_DEFAULT
+    with session_scope() as session:
+        tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
+        tag_item.tag = alt_tag
+
+
+def delete_tag(tag):
+    service = SERVICE_DEFAULT
+    with session_scope() as session:
+        tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
+        session.delete(tag_item)
+
+
+def rename_tag(service, old_name, new_name):
+    with session_scope() as session:
+        tag_item = session.query(Tag).filter_by(tag=old_name, service=service).first()
+        tag_item.tag = new_name
+
+
+def clear_history():
+    with session_scope() as session:
+        session.query(HistoryItem).delete()
+
+
+def delete_duplicate(service, post_id):
+    with session_scope() as session:
+        pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+        session.delete(pic.queue_item)
+        pic.history_item = HistoryItem(wall_id=-1)
+
+
+def get_queue_picnames():
+    with session_scope() as session:
+        pic_names = [q_item.pic_name for q_item in session.query(QueueItem).order_by(QueueItem.id).all()]
+        return pic_names
+
+
+def get_delete_queue():
+    with session_scope() as session:
+        queue = [(queue_item.id, f"{queue_item.pic.service}:{queue_item.pic.post_id}") for queue_item in
+                 session.query(QueueItem).options(joinedload(QueueItem.pic)).order_by(QueueItem.id).all()]
+        return queue
+
+
+def is_tag_exists(tag):
+    with session_scope() as session:
+        tag_in_db = session.query(Tag).filter_by(tag=tag, service=SERVICE_DEFAULT).first()
+    return bool(tag_in_db)
+
+
+def write_new_tag(tag):
+    with session_scope() as session:
+        session.add(tag)
+
+
+def create_pic(service, post_id, new_post):
+    with session_scope() as session:
+        pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
+        if not pic:
+            pic = Pic(
+                service=service,
+                post_id=post_id,
+                authors=new_post['authors'],
+                chars=new_post['chars'],
+                copyright=new_post['copyright'],
+                hash=new_post['hash'])
+            session.add(pic)
+            session.flush()
+            session.refresh(pic)
+    return pic.id
+
+
+def append_pic_data(pic_id, queue_item=None, monitor_item=None, file_id=None):
+    with session_scope() as session:
+        pic = session.query(Pic).filter_by(id=pic_id).first()
+        if queue_item:
+            pic.queue_item = queue_item
+        if monitor_item:
+            pic.monitor_item = monitor_item
+        if file_id:
+            pic.file_id = file_id
+
+
+def get_queue_stats(sender):
+    with session_scope() as session:
+        pics_total = session.query(QueueItem).count()
+        user_total = session.query(QueueItem).filter_by(sender=sender.id).count()
+    return pics_total, user_total
+
+
+def get_hashes():
+    with session_scope() as session:
+        hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
+    return hashes
+
+
+def get_bot_admins():
+    with session_scope() as session:
+        admins = [user for user, in session.query(User.user_id).filter(User.access >= 1).all()]
+    return admins
+
+
+def add_new_pic(pic: Pic):
+    with session_scope() as session:
+        session.add(pic)
+
+
+def is_new_shutdown(chat_id, message_id) -> bool:
+    with session_scope() as session:
+        last_shutdown = session.query(Setting).filter_by(setting='last_shutdown').first()
+        if not last_shutdown:
+            last_shutdown = '0_0'
+        if last_shutdown != f'{chat_id}_{message_id}':
+            ls_setting = Setting(setting='last_shutdown', value=f'{chat_id}_{message_id}')
+            session.merge(ls_setting)
+            return True
+        else:
+            return False
+
+
+def load_users():
+    log = logging.getLogger(f'ohaio.{__name__}')
+    log.debug("Loading bot.users")
+    with session_scope() as session:
+        bot.users = {user: {"access": access, "limit": limit} for user, access, limit in
+                     session.query(User.user_id, User.access, User.limit).all()}
+    if not bot.users:
+        bot.users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
+    log.debug(f'Loaded users: {", ".join(str(user) for user in bot.users)}')
+
+
+def save_users():
+    log = logging.getLogger(f'ohaio.{__name__}')
+    with session_scope() as session:
+        for user, userdata in bot.users.items():
+            db_user = User(user_id=user, access=userdata['access'], limit=userdata['limit'])
+            session.merge(db_user)
+    log.debug("Users saved")
+
+
+def get_info(service, new_tag):
+    with session_scope() as session:
+        hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
+        tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
+        tags = {item.tag: {'last_check': item.last_check or 0, 'missing_times': item.missing_times or 0} for item in (
+            session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
+                Tag).filter_by(service=service, tag=new_tag).all())}
+    return hashes, tags_total, tags
+
+
+def fix_dupe_tag(service, tag, dupe_tag, missing_times):
+    with session_scope() as session:
+        db_tag = session.query(Tag).filter_by(tag=tag, service=service).first()
+        if dupe_tag:
+            new_tag = session.query(Tag).filter_by(tag=dupe_tag, service=service).first()
+            if new_tag:
+                session.delete(db_tag)
+                new_tag.missing_times = missing_times
+                return True, True
+            else:
+                db_tag.tag = dupe_tag
+                db_tag.missing_times = missing_times
+                return True, False
+        else:
+            return False, None
+
+
+def update_tag_last_check(service, tag, last_check):
+    with session_scope() as session:
+        session.query(Tag).filter_by(tag=tag, service=service).first().last_check = last_check
+
+
+def save_tg_msg_to_monitor_item(mon_id, tg_msg):
+    with session_scope() as session:
+        mon_item = session.query(MonitorItem).filter_by(id=mon_id).first()
+        mon_item.tele_msg = tg_msg

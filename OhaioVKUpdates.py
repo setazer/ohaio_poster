@@ -7,6 +7,7 @@ from aiohttp import web
 
 from bot_mng import send_message
 from creds import TELEGRAM_CHANNEL_VKUPDATES, VK_GROUP_ID, VK_TOKEN
+from util import in_thread
 
 WEBHOOK_LISTEN = '0.0.0.0'
 WEBHOOK_PORT = 8237
@@ -23,6 +24,10 @@ async def handle(request):
         return web.Response(status=403)
 
 
+def get_user_data(api, update):
+    return api.users.get(user_ids=update['object']['from_id'])[0]
+
+
 async def process_request(update) -> str:
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version="5.80")
     if update.get("type") == "confirmation":
@@ -30,10 +35,10 @@ async def process_request(update) -> str:
         return 'ad9b6a46'
     elif update.get("type") == "message_new":
         await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":envelope: В сообществе новое личное сообщение."),
-                     reply_markup=messages_link())
+                           reply_markup=messages_link())
         return 'ok'
     elif update.get("type") == "photo_comment_new":
-        user_data = api.users.get(user_ids=update['object']['from_id'])[0]
+        user_data = await in_thread(get_user_data, api=api, update=update)
         await send_message(TELEGRAM_CHANNEL_VKUPDATES,
                            emojize(
                                f":sunrise_over_mountains: Новый комментарий к фотографии.\n\n{user_data['first_name']} "
@@ -44,10 +49,10 @@ async def process_request(update) -> str:
         await send_message(TELEGRAM_CHANNEL_VKUPDATES,
                            emojize(f":loudspeaker: Новый репост\nhttps://vk.com/wall"
                                    f"{update['object']['owner_id']}_{update['object']['id']}"),
-                     reply_markup=post_link(update))
+                           reply_markup=post_link(update))
         return 'ok'
     elif update.get("type") == "wall_reply_new":
-        user_data = api.users.get(user_ids=update['object']['from_id'])[0]
+        user_data = await in_thread(get_user_data, api=api, update=update)
         await send_message(TELEGRAM_CHANNEL_VKUPDATES,
                            emojize(f":page_with_curl: Новый комментарий на стене.\n\n{user_data['first_name']} "
                                    f"{user_data['last_name']}:\n{update['object']['text']}"),
@@ -56,7 +61,7 @@ async def process_request(update) -> str:
     elif update.get("type") == "wall_post_new":
         await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(f":information: Новая запись на стене:\n\n"
                                                                f"{update['object']['text']}"),
-                     reply_markup=post_link(update))
+                           reply_markup=post_link(update))
         return 'ok'
     else:
         await send_message(TELEGRAM_CHANNEL_VKUPDATES,

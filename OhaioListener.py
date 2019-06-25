@@ -19,7 +19,6 @@ from PIL import Image, ImageOps, ImageDraw, ImageFont
 from aiogram import types
 from aiogram.types import ChatType
 from aiogram.utils.executor import start_webhook
-from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 import grabber
@@ -28,7 +27,12 @@ from OhaioMonitor import check_recommendations
 from bot_mng import bot, dp, NewNameSetup, LimitSetup
 from bot_mng import send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, send_document
 from creds import *
-from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_scope, Setting
+from creds import service_db, TELEGRAM_CHANNEL_MON
+from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_scope, get_used_pics, save_pic, \
+    get_user_limits, get_posts_stats, clean_monitor, save_monitor_pic, is_pic_exists, \
+    mark_post_for_deletion, move_back_to_mon, delete_pic_by_id, replace_tag, delete_tag, rename_tag, clear_history, \
+    delete_duplicate, get_queue_picnames, get_delete_queue, is_tag_exists, write_new_tag, create_pic, append_pic_data, \
+    get_queue_stats, get_hashes, get_bot_admins, add_new_pic, is_new_shutdown, load_users, save_users
 from markups import InlinePaginator
 from util import in_thread, human_readable
 
@@ -58,25 +62,6 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(f'ohaio.{__name__}')
 log.setLevel(logging.DEBUG if script_args.debugging else logging.INFO)
 
-
-def load_users():
-    log.debug("Loading bot.users")
-    with session_scope() as session:
-        bot.users = {user: {"access": access, "limit": limit} for user, access, limit in
-                     session.query(User.user_id, User.access, User.limit).all()}
-    if not bot.users:
-        bot.users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
-    log.debug(f'Loaded users: {", ".join(str(user) for user in bot.users)}')
-
-
-def save_users():
-    with session_scope() as session:
-        for user, userdata in bot.users.items():
-            db_user = User(user_id=user, access=userdata['access'], limit=userdata['limit'])
-            session.merge(db_user)
-    log.debug("Users saved")
-
-
 log.debug("Initializing bot")
 load_users()
 
@@ -86,7 +71,7 @@ async def say_to_owner(text):
 
 
 def move_mon_to_q(filename):
-    os.rename(MONITOR_FOLDER + filename, QUEUE_FOLDER + filename)
+    os.rename(f"{MONITOR_FOLDER}{filename}", f"{QUEUE_FOLDER}{filename}")
 
 
 @dp.message_handler(commands=['start'])
@@ -115,19 +100,6 @@ async def stop(message):
     await in_thread(save_users)
 
 
-def is_new_shutdown(chat_id, message_id) -> bool:
-    with session_scope() as session:
-        last_shutdown = session.query(Setting).filter_by(setting='last_shutdown').first()
-        if not last_shutdown:
-            last_shutdown = '0_0'
-        if last_shutdown != f'{chat_id}_{message_id}':
-            ls_setting = Setting(setting='last_shutdown', value=f'{chat_id}_{message_id}')
-            session.merge(ls_setting)
-            return True
-        else:
-            return False
-
-
 @dp.message_handler(ChatType.is_private, commands=['shutdown'])
 @bot_access(2)
 async def shutdown(message):
@@ -146,13 +118,6 @@ async def uptime(message):
     cur_time = dt.fromtimestamp(time.perf_counter())
     diff = ' '.join(human_readable(rd.relativedelta(cur_time, bot.start_time)))
     await send_message(message.chat.id, "Бот работает уже:\n" + diff)
-
-
-def get_user_limits():
-    with session_scope() as session:
-        db_users = {user.user_id: {'username': bot.get_chat(user.user_id).username, 'limit': user.limit} for
-                    user in session.query(User).all()}
-        return db_users
 
 
 @dp.message_handler(ChatType.is_private, commands=['set_limit'])
@@ -180,53 +145,12 @@ async def change_limit(message, state):
         await send_message(message.chat.id, "Неверное значение лимита. Ожидается число.")
 
 
-def get_posts_stats():
-    with session_scope() as session:
-        post_stats = {f"{sender}: {count}/{bot.users[sender]['limit']}" for sender, count in
-                      session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(
-                          QueueItem.sender).all()}
-        return post_stats
-
-
 @dp.message_handler(ChatType.is_private, commands=['stats'])
 @bot_access(2)
 async def stats(message):
     post_stats = await in_thread(get_posts_stats)
     msg = f"Статистика пользователей:\n" + "\n".join(post_stats)
     await send_message(message.chat.id, msg)
-
-
-def get_used_pics(include_history=True, include_queue=True, include_monitor=True):
-    with session_scope() as session:
-        query = session.query(Pic)
-        if include_history:
-            query = query.filter(Pic.history_item.isnot(None))
-        if include_queue:
-            query = query.filter(Pic.queue_item.isnot(None))
-        if include_monitor:
-            query = query.filter(Pic.monitor_item.isnot(None))
-        used_pics = set((pic.service, pic.post_id) for pic in query.all())
-    return used_pics
-
-
-def clean_monitor():
-    with session_scope() as session:
-        monitor = session.query(MonitorItem)
-        monitor.delete(synchronize_session=False)
-
-
-def save_monitor_pic(pic_item):
-    with session_scope() as session:
-        session.add(pic_item)
-        session.flush()
-        session.refresh(pic_item)
-        return pic_item.id
-
-
-def is_pic_exists(service, post_id):
-    with session_scope() as session:
-        pic_item = session.query(Pic).filter_by(service=service, post_id=post_id).first()
-        return bool(pic_item)
 
 
 @dp.message_handler(types.ChatType.is_private, commands=['remonitor'])
@@ -285,11 +209,6 @@ def get_wall_page(api, page_n):
     return api.wall.get(owner_id="-" + VK_GROUP_ID, offset=page_n * 100, count=100)['items']
 
 
-def add_new_pic(pic: Pic):
-    with session_scope() as session:
-        session.add(pic)
-
-
 async def refill_history():
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
     postsnum = await in_thread(get_wall_total, api=api)
@@ -344,9 +263,9 @@ async def get_artist_suggestions(tag, service):
     return suggestions
 
 
-def valid_artist_name(name):
+def is_valid_artist_name(name):
     pat = re.compile(r'[\w()-+]*$')
-    return pat.match(name)
+    return bool(pat.match(name))
 
 
 @dp.callback_query_handler(markups.user_manager_cb.filter(action='allow'))
@@ -381,16 +300,6 @@ async def callback_user_block(call, callback_data):
     await edit_message(chat_id=call.message.chat.id, message_id=call.message.message_id, text="Готово.")
 
 
-def mark_post_for_deletion(pic_id):
-    with session_scope() as session:
-        mon_item = session.query(MonitorItem).filter_by(pic_id=pic_id).first()
-        checked = not mon_item.to_del
-        service = mon_item.pic.service
-        post_id = mon_item.pic.post_id
-        mon_item.to_del = checked
-    return service, post_id, checked
-
-
 @dp.callback_query_handler(markups.post_rec_cb.filter(action='delete'))
 @bot_access(1)
 async def callback_mark_for_deletion(call, callback_data):
@@ -401,35 +310,7 @@ async def callback_mark_for_deletion(call, callback_data):
                       reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id, checked))
 
 
-def move_back_to_mon():
-    with session_scope() as session:
-        mon_items = session.query(MonitorItem).all()
-        q_items = [item.pic_name for item in session.query(QueueItem).all()]
-        for mon_item in mon_items:
-            if not os.path.exists(MONITOR_FOLDER + mon_item.pic_name):
-                if os.path.exists(QUEUE_FOLDER + mon_item.pic_name) and mon_item.pic_name not in q_items:
-                    os.rename(QUEUE_FOLDER + mon_item.pic_name, MONITOR_FOLDER + mon_item.pic_name)
-                else:
-                    session.delete(mon_item)
-
-
 MonitorData = namedtuple('MonitorData', ['to_del', 'pic_name', 'tele_msg', 'pic_id', 'service', 'post_id'])
-
-
-def get_monitor(pic_id):
-    with session_scope() as session:
-        mon_id = session.query(MonitorItem).filter_by(pic_id=pic_id).first().id
-        mon_items = [MonitorData(item.to_del, item.pic_name, item.tele_msg,
-                                 item.pic.id, item.pic.service, item.pic.post_id)
-                     for item in session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(
-                MonitorItem.id <= mon_id).all()]
-    return mon_items
-
-
-def delete_pic_by_id(pic_id):
-    with session_scope() as session:
-        pic = session.query(Pic).filter_by(id=pic_id).first()
-        session.delete(pic)
 
 
 @dp.callback_query_handler(markups.post_rec_cb.filter(action='finish'))
@@ -444,7 +325,7 @@ async def callback_finish_monitor(call, callback_data):
     deleted = {service_db[key]['name']: [] for key in service_db}
     added = {service_db[key]['name']: [] for key in service_db}
     deleted['count'] = added['count'] = 0
-    mon_items = await in_thread(get_monitor, pic_id=pic_id)
+    mon_items = await in_thread(get_monitor_before_id, pic_id=pic_id)
     for i, item in enumerate(mon_items):
 
         if item.to_del:
@@ -504,13 +385,6 @@ async def callback_tag_fix(call, callback_data):
                        reply_markup=markups.gen_tag_fix_markup(service, tag, alter_names.keys()))
 
 
-def replace_tag(tag, alt_tag):
-    service = SERVICE_DEFAULT
-    with session_scope() as session:
-        tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
-        tag_item.tag = alt_tag
-
-
 @dp.callback_query_handler(markups.tag_fix_cb.filter(action='replace'))
 @bot_access(1)
 async def callback_tag_replace(call, callback_data):
@@ -518,13 +392,6 @@ async def callback_tag_replace(call, callback_data):
     await in_thread(replace_tag, tag=tag, alt_tag=alt_tag)
     await answer_callback(call.id, "Тег обновлён")
     await delete_message(call.message.chat.id, call.message.message_id)
-
-
-def delete_tag(tag):
-    service = SERVICE_DEFAULT
-    with session_scope() as session:
-        tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
-        session.delete(tag_item)
 
 
 @dp.callback_query_handler(markups.tag_fix_cb.filter(action='delete'))
@@ -536,16 +403,10 @@ async def callback_tag_delete(call, callback_data):
     await delete_message(call.message.chat.id, call.message.message_id)
 
 
-def rename_tag(service, old_name, new_name):
-    with session_scope() as session:
-        tag_item = session.query(Tag).filter_by(tag=old_name, service=service).first()
-        tag_item.tag = new_name
-
-
 @dp.message_handler(state=NewNameSetup.new_name)
 async def rename_tag_receiver(message, state):
     new_tag = message.text
-    if not valid_artist_name(new_tag):
+    if not is_valid_artist_name(new_tag):
         await send_message(message.chat.id, "Невалидное имя для тега!")
         return
     async with state.proxy() as data:
@@ -568,11 +429,6 @@ async def callback_tag_rename(call, callback_data, state):
         data['service'] = service
 
 
-def clear_history():
-    with session_scope() as session:
-        session.query(HistoryItem).delete()
-
-
 @dp.callback_query_handler(markups.rebuild_history_cb.filter())
 @bot_access(1)
 async def callback_rebuild_history(call, callback_data):
@@ -593,13 +449,6 @@ async def callback_set_limit(call, callback_data, state):
         data['user'] = user
     await LimitSetup.next()
     await send_message(call.message.chat.id, "Новый лимит:")
-
-
-def delete_duplicate(service, post_id):
-    with session_scope() as session:
-        pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
-        session.delete(pic.queue_item)
-        pic.history_item = HistoryItem(wall_id=-1)
 
 
 @dp.callback_query_handler(markups.dupes_cb.filter())
@@ -636,12 +485,6 @@ def pil_grid(images):
     return im_grid
 
 
-def get_queue_picnames():
-    with session_scope() as session:
-        pic_names = [q_item.pic_name for q_item in session.query(QueueItem).order_by(QueueItem.id).all()]
-        return pic_names
-
-
 async def generate_queue_image():
     pic_names = await in_thread(get_queue_picnames)
     images = []
@@ -666,13 +509,6 @@ async def check_queue(message):
     await generate_queue_image()
     log.debug("Queue grid picture generation complete. Sending...")
     await send_document(message.chat.id, data_filename=QUEUE_GEN_FILE, caption="Очередь")
-
-
-def get_delete_queue():
-    with session_scope() as session:
-        queue = [(queue_item.id, f"{queue_item.pic.service}:{queue_item.pic.post_id}") for queue_item in
-                 session.query(QueueItem).options(joinedload(QueueItem.pic)).order_by(QueueItem.id).all()]
-        return queue
 
 
 @dp.message_handler(ChatType.is_private, commands=['delete'])
@@ -710,17 +546,6 @@ async def broadcast_message(message):
     await send_message(message.chat.id, text="Броадкаст отправлен.")
 
 
-def is_tag_exists(tag):
-    with session_scope() as session:
-        tag_in_db = session.query(Tag).filter_by(tag=tag, service=SERVICE_DEFAULT).first()
-    return bool(tag_in_db)
-
-
-def write_new_tag(tag):
-    with session_scope() as session:
-        session.add(tag)
-
-
 @dp.message_handler(ChatType.is_private, commands=['add_tag'])
 @bot_access(1)
 async def add_recommendation_tag(message):
@@ -742,8 +567,7 @@ async def add_recommendation_tag(message):
         new_tag = Tag(tag=tag, service=SERVICE_DEFAULT, last_check=last_check, missing_times=0)
         await in_thread(write_new_tag, tag=new_tag)
         await send_message(message.chat.id, text="Тег добавлен")
-    # TODO new tag monitor
-    check_recommendations(tag)
+    await check_recommendations(tag)
 
 
 @dp.message_handler(ChatType.is_private)
@@ -807,37 +631,9 @@ def get_pixiv_post_details(post_id):
     return req
 
 
-def create_pic(service, post_id, new_post):
-    with session_scope() as session:
-        pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
-        if not pic:
-            pic = Pic(
-                service=service,
-                post_id=post_id,
-                authors=new_post['authors'],
-                chars=new_post['chars'],
-                copyright=new_post['copyright'],
-                hash=new_post['hash'])
-            session.add(pic)
-            session.flush()
-            session.refresh(pic)
-    return pic.id
-
-
-def append_pic_data(pic_id, queue_item=None, monitor_item=None, file_id=None):
-    with session_scope() as session:
-        pic = session.query(Pic).filter_by(id=pic_id).first()
-        if queue_item:
-            pic.queue_item = queue_item
-        if monitor_item:
-            pic.monitor_item = monitor_item
-        if file_id:
-            pic.file_id = file_id
-
-
 async def queue_pixiv_illust(sender, post_id):
     service = 'pix'
-    used_pics = await in_thread(get_used_pics)
+    used_pics = await in_thread(get_used_pics, include_queue=True, include_monitor=True)
     req = await in_thread(get_pixiv_post_details, post_id=post_id)
     if not req.get('error', False):
         pixiv_msg = await send_message(chat_id=sender.id, text="Получены данные о работе, скачивание пикч")
@@ -885,48 +681,6 @@ async def queue_pixiv_illust(sender, post_id):
         await send_message(chat_id=sender.id, text="Ошибка при получении данных")
 
 
-def get_queue_stats(sender):
-    with session_scope() as session:
-        pics_total = session.query(QueueItem).count()
-        user_total = session.query(QueueItem).filter_by(sender=sender.id).count()
-    return pics_total, user_total
-
-
-def is_pic_used(sender, service, post_id, pics_total, user_total):
-    with session_scope() as session:
-        pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
-            service=service, post_id=post_id).first()
-        if pic:
-            if pic.queue_item:
-                text = f"ID {post_id} ({service_db[service]['name']}) уже в очереди!"
-                return text, None, None, None
-            if pic.history_item:
-                text = f"ID {post_id} ({service_db[service]['name']}) уже было!"
-                markup = markups.gen_post_link(pic.history_item.wall_id)
-                return text, markup, None, None
-            if pic.monitor_item:
-                pic.queue_item = QueueItem(sender=sender.id, pic_name=pic.monitor_item.pic_name)
-                del_msg_chat_id, del_msg_id = TELEGRAM_CHANNEL_MON, pic.monitor_item.tele_msg
-                move_mon_to_q(pic.monitor_item.pic_name)
-                session.delete(pic.monitor_item)
-                text = f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. \n" \
-                    f"В персональной очереди: {user_total + 1}/{bot.users[sender.id]['limit']}.\n" \
-                    f"Всего пикч: {pics_total + 1}."
-                return text, None, del_msg_chat_id, del_msg_id
-        return None, None, None, None
-
-
-def get_hashes():
-    with session_scope() as session:
-        hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
-    return hashes
-
-
-def save_pic(new_pic):
-    with session_scope() as session:
-        session.add(new_pic)
-
-
 async def queue_picture(sender, service, post_id):
     pics_total, user_total = await in_thread(get_queue_stats, sender=sender)
     text, markup, del_msg_chat_id, del_msg_id = await in_thread(is_pic_used, sender=sender,
@@ -967,12 +721,6 @@ async def queue_picture(sender, service, post_id):
                            f"Заглушка роскомнадзора? Отменено.")
 
 
-def get_bot_admins():
-    with session_scope() as session:
-        admins = [user for user, in session.query(User.user_id).filter(User.access >= 1).all()]
-    return admins
-
-
 async def on_startup(dp):
     admins = await in_thread(get_bot_admins)
     for admin in admins:
@@ -987,3 +735,37 @@ async def on_shutdown(app):
 if __name__ == '__main__':
     start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
                   skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
+
+
+def get_monitor_before_id(pic_id):
+    with session_scope() as session:
+        mon_id = session.query(MonitorItem).filter_by(pic_id=pic_id).first().id
+        mon_items = [MonitorData(item.to_del, item.pic_name, item.tele_msg,
+                                 item.pic.id, item.pic.service, item.pic.post_id)
+                     for item in session.query(MonitorItem).options(joinedload(MonitorItem.pic)).filter(
+                MonitorItem.id <= mon_id).all()]
+    return mon_items
+
+
+def is_pic_used(sender, service, post_id, pics_total, user_total):
+    with session_scope() as session:
+        pic = session.query(Pic).options(joinedload(Pic.history_item), joinedload(Pic.monitor_item)).filter_by(
+            service=service, post_id=post_id).first()
+        if pic:
+            if pic.queue_item:
+                text = f"ID {post_id} ({service_db[service]['name']}) уже в очереди!"
+                return text, None, None, None
+            if pic.history_item:
+                text = f"ID {post_id} ({service_db[service]['name']}) уже было!"
+                markup = markups.gen_post_link(pic.history_item.wall_id)
+                return text, markup, None, None
+            if pic.monitor_item:
+                pic.queue_item = QueueItem(sender=sender.id, pic_name=pic.monitor_item.pic_name)
+                del_msg_chat_id, del_msg_id = TELEGRAM_CHANNEL_MON, pic.monitor_item.tele_msg
+                move_mon_to_q(pic.monitor_item.pic_name)
+                session.delete(pic.monitor_item)
+                text = f"Пикча ID {post_id} ({service_db[service]['name']}) сохранена. \n" \
+                    f"В персональной очереди: {user_total + 1}/{bot.users[sender.id]['limit']}.\n" \
+                    f"Всего пикч: {pics_total + 1}."
+                return text, None, del_msg_chat_id, del_msg_id
+        return None, None, None, None

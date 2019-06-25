@@ -42,6 +42,7 @@ WEBHOOK_URL_PATH = f"/{TELEGRAM_TOKEN}/"
 WEBHOOK_URL = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
 # Misc
 QUEUE_LIMIT = 240
+MAX_NEW_POST_COUNT = 20
 REQUESTS_PROXY = None  # "http://proxy.host:1234" or "socks5://proxy.host:1234"
 
 MONITOR_FOLDER = path_join(getcwd(), 'pics', 'mon', '')

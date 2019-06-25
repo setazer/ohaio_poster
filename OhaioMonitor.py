@@ -1,215 +1,208 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import json
 import logging
+from collections import namedtuple
 from urllib.parse import quote
 
-import requests
-import telebot
+import aiohttp
 from sqlalchemy.orm import joinedload
 
 import grabber
 import markups
-import util
 from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message
 from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
-    MONITOR_FOLDER
-from db_mng import Tag, Pic, MonitorItem, session_scope
+    MONITOR_FOLDER, SERVICE_DEFAULT, MAX_NEW_POST_COUNT
+from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
+    fix_dupe_tag, save_tg_msg_to_monitor_item, update_tag_last_check
+from util import in_thread
 
 
-def check_recommendations(new_tag=None):
-    telebot.apihelper.proxy = REQUESTS_PROXY
+async def check_recommendations(new_tag=None):
     if not new_tag:
-        repost_msg = send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
-        repost_previous_monitor_check()
-        delete_message(repost_msg.chat.id, repost_msg.message_id)
-    srvc_msg = send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
-    service = 'dan'
-    with session_scope() as session:
-        used_pics = set((pic.service, pic.post_id) for pic
-                        in session.query(Pic).filter(Pic.history_item.isnot(None), Pic.queue_item.isnot(None)).all())
-        hashes = {pic_item.hash: pic_item.post_id for pic_item in session.query(Pic).all()}
-        tags_total = session.query(Tag).filter_by(service=service).count() if not new_tag else 1
-        tags = {item.tag: {'last_check': item.last_check or 0, 'missing_times': item.missing_times or 0} for item in (
-            session.query(Tag).filter_by(service=service).order_by(Tag.tag).all() if not new_tag else session.query(
-                Tag).filter_by(service=service, tag=new_tag).all())}
-    max_new_posts_per_tag = 20
+        repost_msg = await send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+        await repost_previous_monitor_check()
+        await delete_message(repost_msg.chat.id, repost_msg.message_id)
+    srvc_msg = await send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
+    service = SERVICE_DEFAULT
+    used_pics = await in_thread(get_used_pics, include_queue=True)
+    hashes, tags_total, tags = await in_thread(get_info, service=service, new_tag=new_tag)
     tags_api = 'http://' + service_db[service]['posts_api']
     login = service_db[service]['payload']['user']
     api_key = service_db[service]['payload']['api_key']
     # post_api = 'https://' + service_db[service]['post_api']
     new_posts = {}
     proxies = REQUESTS_PROXY
-    ses = requests.Session()
-    tags_slices = (list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5))
-    for (n, tags_slice) in enumerate(tags_slices, 1):
-        tag_aliases = {}
-        req = ses.get(tags_api.format('+'.join(
-            '~' + quote(tag) for tag in tags_slice)) + f'+-rating:explicit&login={login}&api_key={api_key}&limit=200',
-                      proxies=proxies)
-        try:
-            posts = req.json()
-        except json.decoder.JSONDecodeError as ex:
-            util.log_error(ex, kwargs={'tags': tags_slice, 'text': req.text})
-            posts = []
-        new_post_count = {tag: 0 for tag in tags_slice}
-        for post in posts:
-            try:
-                post_id = post['id']
-            except TypeError as ex:
-                util.log_error(ex, kwargs=posts)
-                o_logger.debug(ex)
-                o_logger.debug(posts)
-                break
-            skip = any(b_tag in post['tag_string'] for b_tag in BANNED_TAGS)
-            no_urls = not any([post.get('large_file_url'), post.get('file_url')])
-            if skip or no_urls: continue
-            if (service, str(post_id)) in used_pics or any(item in post['file_ext'] for item in ['webm', 'zip']):
-                continue
-            if tag_aliases:
-                for tag, alias in tag_aliases.items():
-                    post['tag_string_artist'].replace(alias, tag)
-            try:
-                # get particular author tag in case post have multiple
-                post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
-            except KeyError:  # post artist not in current tags slice - means database have artist's old alias
-                tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
-                for artist in post['tag_string_artist'].split():
-                    tag_antecedents = [tag for item in ses.get(tag_aliases_api.format(artist), proxies=proxies).json()
-                                       for tag in tags_slice if
-                                       item['status'] == 'active' and tag in item['antecedent_name']]
-                    if not tag_antecedents:
-                        continue
-                    else:
-                        tag = tag_antecedents.pop()
-                        tag_aliases[tag] = artist
-                        post_tag = tag
-                        break
-                else:
-                    send_message(srvc_msg.chat.id,
-                                 f'Алиас тега для поста {service}:{post_id} с авторами '
-                                 f'"{post["tag_string_artist"]}" не найден.\n'
-                                 f'Должен быть один из: {", ".join(tags_slice)}')
+    async with aiohttp.ClientSession() as session:
+        tags_slices = (list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5))
+        for (n, tags_slice) in enumerate(tags_slices, 1):
+            tag_aliases = {}
+            tags_url = (f"{tags_api.format('+'.join('~' + quote(tag) for tag in tags_slice))}"
+                        f"+-rating:explicit&login={login}&api_key={api_key}&limit=200")
+            async with session.get(tags_url, proxies=proxies) as resp:
+                try:
+                    posts = await resp.json()
+                except json.decoder.JSONDecodeError as ex:
+                    log.error(f'tags:{tags_slice}')
+                    log.error(f'text:{await resp.text()}')
+                    log.error(ex)
+                    posts = []
+            new_post_count = {tag: 0 for tag in tags_slice}
+            for post in posts:
+                try:
+                    post_id = post['id']
+                except TypeError as ex:
+                    log.error(f'posts:{posts}')
+                    log.error(ex)
+                    break
+                has_banned_tags = any(b_tag in post['tag_string'] for b_tag in BANNED_TAGS)
+                no_urls = not any([post.get('large_file_url'), post.get('file_url')])
+                invalid_ext = any(item in post['file_ext'] for item in ['webm', 'zip'])
+                if any((has_banned_tags, no_urls, invalid_ext)):
                     continue
+                if (service, str(post_id)) in used_pics:
+                    continue
+                if tag_aliases:
+                    for tag, alias in tag_aliases.items():
+                        post['tag_string_artist'].replace(alias, tag)
+                try:
+                    # get particular author tag in case post have multiple
+                    post_tag = set(post['tag_string_artist'].split()).intersection(set(tags_slice)).pop()
+                except KeyError:  # post artist not in current tags slice - means database have artist's old alias
+                    tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
+                    for artist in post['tag_string_artist'].split():
+                        async with session.get(tag_aliases_api.format(artist), proxies=proxies) as resp:
+                            tags_json = await resp.json()
+                        tag_antecedents = [tag for item in tags_json for tag in tags_slice
+                                           if item['status'] == 'active' and tag in item['antecedent_name']]
+                        if not tag_antecedents:
+                            continue
+                        else:
+                            tag = tag_antecedents.pop()
+                            tag_aliases[tag] = artist
+                            post_tag = tag
+                            break
+                    else:
+                        await send_message(srvc_msg.chat.id,
+                                           f'Алиас тега для поста {service}:{post_id} с авторами '
+                                           f'"{post["tag_string_artist"]}" не найден.\n'
+                                           f'Должен быть один из: {", ".join(tags_slice)}')
+                        continue
 
-            if (new_post_count[post_tag] < max_new_posts_per_tag and
-                    post_id > tags[post_tag].get('last_check')):
-                new_post_count[post_tag] += 1
-                new_posts[str(post_id)] = {
-                    'authors': ' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
-                    'chars': ' '.join({f"#{x.split('_(')[0]}" for x in
-                                       post.get('tag_string_character').split()}),
-                    'copyright': ' '.join({f'#{x}'.replace('_(series)', '') for x in
-                                           post['tag_string_copyright'].split()}),
-                    'tag': post_tag, 'sample_url': post['file_url'],
-                    'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
-                    'dimensions': f"{post['image_height']}x{post['image_width']}",
-                    'safe': post['rating'] == "s"}
-        if (n % 5) == 0:
-            edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                        reply_markup=markups.gen_status_markup(
-                            f"{tag} [{(n * 5)}/{tags_total}]",
-                            f"Новых постов: {len(new_posts)}"))
-        with session_scope() as session:
+                if (new_post_count[post_tag] < MAX_NEW_POST_COUNT and
+                        post_id > tags[post_tag].get('last_check', 0)):
+                    new_post_count[post_tag] += 1
+                    new_posts[str(post_id)] = {
+                        'authors': ' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
+                        'chars': ' '.join({f"#{x.split('_(')[0]}" for x in
+                                           post.get('tag_string_character').split()}),
+                        'copyright': ' '.join({f'#{x}'.replace('_(series)', '') for x in
+                                               post['tag_string_copyright'].split()}),
+                        'tag': post_tag, 'sample_url': post['file_url'],
+                        'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
+                        'dimensions': f"{post['image_height']}x{post['image_width']}",
+                        'safe': post['rating'] == "s"}
+            if (n % 5) == 0:
+                await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                  reply_markup=markups.gen_status_markup(
+                                      f"{tag} [{(n * 5)}/{tags_total}]",
+                                      f"Новых постов: {len(new_posts)}"))
             for tag in tags_slice:
                 if not new_post_count[tag]:
                     tags[tag]['missing_times'] += 1
                     if tags[tag]['missing_times'] > 4:
-                        send_message(srvc_msg.chat.id,
-                                     f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
-                                     reply_markup=markups.gen_del_tag_markup(tag))
+                        await send_message(srvc_msg.chat.id,
+                                           f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
+                                           reply_markup=markups.gen_del_tag_markup(tag))
                 else:
                     tags[tag]['missing_times'] = 0
-                db_tag = session.query(Tag).filter_by(tag=tag, service=service).first()
-                if tag_aliases.get(tag):
-                    new_tag = session.query(Tag).filter_by(tag=tag_aliases[tag], service=service).first()
-                    if new_tag:
-                        session.delete(db_tag)
-                        new_tag.missing_times = tags[tag]['missing_times']
-                        send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
+                had_dupes, got_renamed = await in_thread(fix_dupe_tag, service=service, tag=tag,
+                                                         dupe_tag=tag_aliases.get(tag),
+                                                         missing_times=tags[tag]['missing_times'])
+                if had_dupes:
+                    if got_renamed:
+                        await send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
                     else:
-                        db_tag.tag = tag_aliases[tag]
-                        db_tag.missing_times = tags[tag]['missing_times']
-                        send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
+                        await send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
 
-    edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
-    srt_new_posts = sorted(new_posts)
-    for (n, post_id) in enumerate(srt_new_posts, 1):
-        edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                    reply_markup=markups.gen_status_markup(
-                        f"Новых постов: {len(new_posts)}",
-                        f"Обработка поста: {n}/{len(srt_new_posts)}"))
-        new_post = new_posts[post_id]
-        if new_post['file_url'] or new_post['sample_url']:
-            pic_ext = new_post['file_ext']
-            pic_name = f"{service}.{post_id}.{pic_ext}"
-        else:
-            pic_name = ''
-        dl_url = new_post['file_url']
-        post_hash = grabber.download(dl_url, MONITOR_FOLDER + pic_name)
-        if post_hash:
-            new_posts[post_id]['pic_name'] = pic_name
-            new_posts[post_id]['hash'] = post_hash
-        else:
-            new_posts[post_id]['pic_name'] = None
-    edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
-    for post_id in srt_new_posts:
-        new_post = new_posts[post_id]
-        if new_post['pic_name']:
-            with session_scope() as session:
-                pic = session.query(Pic).filter_by(service=service, post_id=post_id).first()
-                if not pic:
-                    pic = Pic(
-                        service=service,
-                        post_id=post_id,
-                        authors=new_post['authors'],
-                        chars=new_post['chars'],
-                        copyright=new_post['copyright'],
-                        hash=new_post['hash'])
-                    session.add(pic)
-                    session.flush()
-                    session.refresh(pic)
+        await edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
+        srt_new_posts = sorted(new_posts)
+        for (n, post_id) in enumerate(srt_new_posts, 1):
+            await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                              reply_markup=markups.gen_status_markup(
+                                  f"Новых постов: {len(new_posts)}",
+                                  f"Обработка поста: {n}/{len(srt_new_posts)}"))
+            new_post = new_posts[post_id]
+            if new_post['file_url'] or new_post['sample_url']:
+                pic_ext = new_post['file_ext']
+                pic_name = f"{service}.{post_id}.{pic_ext}"
+            else:
+                pic_name = ''
+            dl_url = new_post['file_url']
+            post_hash = await grabber.download(dl_url, MONITOR_FOLDER + pic_name)
+            if post_hash:
+                new_posts[post_id]['pic_name'] = pic_name
+                new_posts[post_id]['hash'] = post_hash
+            else:
+                new_posts[post_id]['pic_name'] = None
+        await edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
+        for post_id in srt_new_posts:
+            new_post = new_posts[post_id]
+            if new_post['pic_name']:
+                pic_id = await in_thread(create_pic, service=service, post_id=post_id, new_post=new_post)
                 is_dupe = new_post['hash'] in hashes
                 if not is_dupe:
                     hashes[new_post['hash']] = post_id
-                mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
-                                     f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
-                                     reply_markup=markups.gen_rec_new_markup(pic.id, service, pic.post_id,
-                                                                             not new_post['safe'] or is_dupe,
-                                                                             hashes[new_post[
-                                                                                          'hash']] if is_dupe else None))
-                pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
-                                               to_del=not new_post['safe'] or is_dupe)
-                pic.file_id = mon_msg.photo[0].file_id
-                session.query(Tag).filter_by(tag=new_post['tag'],
-                                             service=service).first().last_check = int(post_id)
-    delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+                mon_msg = await send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
+                                           f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
+                                           reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id,
+                                                                                   not new_post['safe'] or is_dupe,
+                                                                                   hashes[new_post[
+                                                                                       'hash']] if is_dupe else None))
+
+                monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
+                                           to_del=not new_post['safe'] or is_dupe)
+                file_id = mon_msg.photo[0].file_id
+                await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+                await in_thread(update_tag_last_check, service=service, tag=new_post['tag'], last_check=int(post_id))
+        await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
-def repost_previous_monitor_check():
+MonitorData = namedtuple('MonitorData', ['id', 'tele_msg', 'to_del', 'pic_id', 'service', 'post_id', 'authors'])
+
+
+def get_monitor():
     with session_scope() as session:
-        mon_items = session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()
-        for mon_item in mon_items:
-            delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
-            new_msg = send_photo(TELEGRAM_CHANNEL_MON, mon_item.pic.file_id,
-                                 caption=f"{' '.join([f'{author}' for author in mon_item.pic.authors.split()])}\n"
-                                 f"ID: {mon_item.pic.post_id}",
-                                 reply_markup=markups.gen_rec_new_markup(mon_item.pic.id,
-                                                                         mon_item.pic.service,
-                                                                         mon_item.pic.post_id,
-                                                                         mon_item.to_del))
-            if new_msg:
-                mon_item.tele_msg = new_msg.message_id
+        mon_items = [MonitorData(mon_item.id, mon_item.tele_msg, mon_item.to_del, mon_item.pic.id,
+                                 mon_item.pic.service, mon_item.pic.post_id, mon_item.pic.authors) for mon_item in
+                     session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()]
+        return mon_items
+
+
+async def repost_previous_monitor_check():
+    mon_items = await in_thread(get_monitor)
+    for mon_item in mon_items:
+        await delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
+        new_msg = await send_photo(TELEGRAM_CHANNEL_MON, mon_item.file_id,
+                                   caption=f"{mon_item.authors}\n"
+                                   f"ID: {mon_item.post_id}",
+                                   reply_markup=markups.gen_rec_new_markup(mon_item.id,
+                                                                           mon_item.service,
+                                                                           mon_item.post_id,
+                                                                           mon_item.to_del))
+        if new_msg:
+            await in_thread(save_tg_msg_to_monitor_item, mon_id=mon_item.id, tg_msg=new_msg.message_id)
 
 
 if __name__ == '__main__':
-    o_logger = logging.getLogger('OhaioPosterLogger')
-    o_logger.setLevel(logging.DEBUG)
-    o_fh = logging.FileHandler(LOG_FILE)
-    o_fh.setLevel(logging.DEBUG)
-    o_fh.setFormatter(logging.Formatter('%(asctime)s [Monitor] %(levelname)-8s %(message)s'))
-    o_ch = logging.StreamHandler()
-    o_ch.setFormatter(logging.Formatter('%(asctime)s [Monitor] %(levelname)-8s %(message)s'))
-    o_ch.setLevel(logging.DEBUG)
-    o_logger.addHandler(o_fh)
-    o_logger.addHandler(o_ch)
-    check_recommendations()
+    log = logging.getLogger(f'ohaio.{__name__}')
+    log.setLevel(logging.DEBUG)
+    fh = logging.FileHandler(LOG_FILE)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter('%(asctime)s [Monitor] %(levelname)-8s %(message)s'))
+    sh = logging.StreamHandler()
+    sh.setFormatter(logging.Formatter('%(asctime)s [Monitor] %(levelname)-8s %(message)s'))
+    sh.setLevel(logging.DEBUG)
+    log.addHandler(fh)
+    log.addHandler(sh)
+    asyncio.run(check_recommendations())
