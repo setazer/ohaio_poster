@@ -1,16 +1,24 @@
 # -*- coding: utf-8 -*-
 from contextlib import contextmanager
 
+import sqlalchemy
 from sqlalchemy import Column, Integer, String, Boolean, Sequence, UniqueConstraint, PrimaryKeyConstraint, ForeignKey
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import sessionmaker, relationship
 
 from creds import DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME
 
 Base = declarative_base()
 
+
+def print_table_row(instance):
+    mapper = inspect(instance)
+    class_name = mapper.class_.__name__
+    columns = ', '.join(f"{attr.key}='{getattr(instance, attr.key)}'" for attr in mapper.attrs)
+    return f"<{class_name}({columns})>"
 
 class User(Base):
     __tablename__ = 'users'
@@ -19,7 +27,7 @@ class User(Base):
     limit = Column(Integer)
 
     def __repr__(self):
-        return f"<User(user_id='{self.user_id}', access='{self.access}')>"
+        return print_table_row(self)
 
 
 class Tag(Base):
@@ -31,7 +39,7 @@ class Tag(Base):
     __table_args__ = (PrimaryKeyConstraint('service', 'tag', name='tag_pkey'),)
 
     def __repr__(self):
-        return f"<Tag(tag='{self.tag}', last_check='{self.last_check}, missing_times='{self.missing_times}')>"
+        return print_table_row(self)
 
 
 class Pic(Base):
@@ -50,7 +58,7 @@ class Pic(Base):
     __table_args__ = (UniqueConstraint('service', 'post_id', name='pics_service_post_id_key'),)
 
     def __repr__(self):
-        return f"<Pic(id='{self.id}',service='{self.service}', post_id='{self.post_id}', file_id='{self.file_id}', authors='{self.authors}', chars='{self.chars}', copyright='{self.copyright}')>"
+        return print_table_row(self)
 
 
 class Setting(Base):
@@ -59,7 +67,7 @@ class Setting(Base):
     value = Column(String(30), nullable=False)
 
     def __repr__(self):
-        return f"<Setting(setting='{self.setting}', value='{self.value}')>"
+        return print_table_row(self)
 
 
 class QueueItem(Base):
@@ -78,7 +86,7 @@ class QueueItem(Base):
     # __table_args__ = (UniqueConstraint('service', 'post_id', name='queue_service_post_id_key'),)
 
     def __repr__(self):
-        return f"<QueueItem(id='{self.id}', pic_id='{self.pic_id}', sender='{self.sender}', pic_name='{self.pic_name}')>"
+        return print_table_row(self)
 
 
 class MonitorItem(Base):
@@ -91,7 +99,7 @@ class MonitorItem(Base):
     to_del = Column(Boolean)
 
     def __repr__(self):
-        return f"<MonitorItem(id='{self.id}', pic_id='{self.pic_id}', tele_msg='{self.tele_msg}', pic_name='{self.pic_name}', to_del='{self.to_del}')>"
+        return print_table_row(self)
 
 
 class HistoryItem(Base):
@@ -106,7 +114,7 @@ class HistoryItem(Base):
     # __table_args__ = (PrimaryKeyConstraint('service', 'post_id', name='history_pkey'),)
 
     def __repr__(self):
-        return f"<HistoryItem(pic_id='{self.pic_id}', wall_id='{self.wall_id}')>"
+        return print_table_row(self)
 
 
 # logging.basicConfig()
@@ -134,7 +142,7 @@ def session_scope():
     try:
         yield session
         session.commit()
-    except:
+    except sqlalchemy.exc.SQLAlchemyError:
         session.rollback()
         raise
     finally:

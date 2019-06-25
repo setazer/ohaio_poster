@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import argparse
-import datetime
+import asyncio
 import logging
 import os
+import sys
+from datetime import datetime as dt
 
 import pytumblr
 import requests
@@ -13,8 +15,11 @@ from sqlalchemy import func
 import markups
 import util
 from bot_mng import send_photo, send_message
-from creds import TELEGRAM_CHANNEL, OWNER_ID, LOG_FILE, REQUESTS_PROXY, QUEUE_FOLDER, VK_TOKEN, \
-    VK_GROUP_ID, TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET, TUMBLR_OAUTH_TOKEN, TUMBLR_OAUTH_SECRET, TUMBLR_BLOG_NAME
+from creds import (TELEGRAM_CHANNEL, OWNER_ID,
+                   LOG_FILE, QUEUE_FOLDER, QUEUE_LIMIT,
+                   VK_TOKEN, VK_GROUP_ID,
+                   TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET,
+                   TUMBLR_OAUTH_TOKEN, TUMBLR_OAUTH_SECRET, TUMBLR_BLOG_NAME)
 from creds import service_db
 from db_mng import Pic, QueueItem, HistoryItem, session_scope, Setting, User
 
@@ -64,13 +69,31 @@ def get_current_album():
             return str(new_album['id'])
 
 
-def post_to_vk(new_post, msg='#ohaioposter'):
+def post_to_vk(new_post):
+    log = logging.getLogger(f'ohaio.{__name__}')
+    if new_post['post_to_vk']:
+        try:
+            wall_id = post_to_vk_via_api(new_post, gen_msg(new_post))
+        except Exception as ex:
+            log.error(ex)
+            util.log_error(ex)
+            wall_id = -1
+        else:
+            with session_scope() as session:
+                last_poster = Setting(setting='last_poster', value=str(new_post['sender']))
+                session.merge(last_poster)
+    else:
+        wall_id = -1
+    return wall_id
+
+
+def post_to_vk_via_api(new_post, msg):
     post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id'].split('_p')[0]
     # Авторизация
-    msg += "\nОригинал: " + post_url
+    post_msg = f"{msg}\nОригинал: {post_url}"
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
     # Загрузка картинки на сервер
-    with open(QUEUE_FOLDER + new_post['pic_name'], 'rb') as pic:
+    with open(f"{QUEUE_FOLDER}{new_post['pic_name']}", 'rb') as pic:
         current_album = get_current_album()
         upload_url = api.photos.getUploadServer(group_id=VK_GROUP_ID, album_id=current_album)['upload_url']
         img = {'file1': (new_post['pic_name'], pic)}
@@ -79,11 +102,25 @@ def post_to_vk(new_post, msg='#ohaioposter'):
         result['server'] = int(result['server'])
         uploaded_photo = api.photos.save(group_id=VK_GROUP_ID, album_id=current_album, caption=post_url, **result)
         photo_link = 'photo' + str(uploaded_photo[0]['owner_id']) + '_' + str(uploaded_photo[0]['id'])
-        wall_id = api.wall.post(message=msg, owner_id='-' + VK_GROUP_ID, attachments=(photo_link,))
+        wall_id = api.wall.post(message=post_msg, owner_id='-' + VK_GROUP_ID, attachments=(photo_link,))
     with session_scope() as session:
         num_photos = session.query(Setting).filter_by(setting='num_photos').first()
         num_photos.value = str(int(num_photos.value) + 1)
     return wall_id['post_id']
+
+
+async def post_to_tg(new_post, wall_id):
+    photo = new_post.get('file_id', f"{QUEUE_FOLDER}{new_post['pic_name']}")
+    await send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=photo,
+                     caption=gen_msg(new_post, True), reply_markup=markups.gen_channel_inline(new_post, wall_id))
+
+
+async def post_info(new_post):
+    await send_message(new_post['sender'],
+                       f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
+    if new_post['sender'] != OWNER_ID:
+        await send_message(OWNER_ID,
+                           f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
 
 
 def post_to_tumblr(new_post):
@@ -97,142 +134,125 @@ def post_to_tumblr(new_post):
                        caption=msg)
 
 
-def check_queue():
+def check_queue(args):
     vk_posting_times = [(55, 60), (0, 5), (25, 35)]
-    minute = datetime.datetime.now().minute
+    minute = dt.now().minute
     is_vk_time = args.forced_post or any(time_low <= minute <= time_high for time_low, time_high in vk_posting_times)
     with session_scope() as session:
-        db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
-        db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
-        limits = {user.user_id: user.limit for user in session.query(User).order_by(User.user_id).all()}
-        last_poster = int(db_last_poster.value) if db_last_poster else OWNER_ID
         post_stats = {sender: count for sender, count in
                       session.query(QueueItem.sender, func.count(QueueItem.sender)).group_by(QueueItem.sender).all()}
         if not post_stats:
             return None
-        new_poster = last_poster
-        if is_vk_time:  # should always switch poster
-            if post_stats.get(last_poster):
-                del post_stats[last_poster]
-            if post_stats:
-                while not new_poster in post_stats:
-                    new_index = db_users.index(new_poster)
-                    db_users.append(db_users.pop(0))
-                    new_poster = db_users[new_index]
+        db_last_poster = session.query(Setting).filter_by(setting='last_poster').first()
+        db_users = [user.user_id for user in session.query(User).order_by(User.user_id).all()]  # order is important
+        limits = {user.user_id: user.limit for user in session.query(User).order_by(User.user_id).all()}
+        last_user = int(db_last_poster.value) if db_last_poster else OWNER_ID
+        shifted_users = db_users[db_users.index(last_user):] + db_users[:db_users.index(last_user)]
+        # shift users to start from next user for vk
+        vk_users = shifted_users[1:] + shifted_users[:1]
+        new_poster = None
+        if is_vk_time:
+            for user in vk_users:
+                if post_stats.get(user, 0) > 0:
+                    new_poster = user
+                    break
         else:  # can stay same if appropriate
-            last_index = db_users.index(last_poster)
-            db_users.extend(db_users[:last_index])
-            db_users[:last_index] = []
-            for new_poster in db_users:
-                if post_stats.get(new_poster, 0) >= limits.get(new_poster):
+            for user in shifted_users:
+                if post_stats.get(user, 0) >= limits.get(user, QUEUE_LIMIT):
+                    new_poster = user
                     break
             else:
-                return None
-
+                return None  # don't post if no user exceeds limit
         posts = session.query(QueueItem).filter_by(sender=new_poster).order_by(QueueItem.id).all()
-        new_post = None
+        queue_post = None
         for post in posts:
-            if os.path.exists(QUEUE_FOLDER + post.pic_name) and not post.pic.history_item:
-                new_post = {'service': post.pic.service, 'post_id': post.pic.post_id, 'authors': post.pic.authors,
-                            'chars': post.pic.chars, 'copyright': post.pic.copyright, 'pic_name': post.pic_name,
-                            'sender': post.sender, 'post_to_vk': is_vk_time}
+            if not post.pic.history_item:
+                queue_post = {'service': post.pic.service, 'post_id': post.pic.post_id, 'authors': post.pic.authors,
+                              'chars': post.pic.chars, 'copyright': post.pic.copyright,
+                              'sender': post.sender, 'post_to_vk': is_vk_time}
+                if os.path.exists(f"{QUEUE_FOLDER}{post.pic_name}"):
+                    queue_post['pic_name'] = post.pic_name
+                elif post.pic.file_id:
+                    queue_post['file_id'] = post.pic.file_id
+                else:  # how this even happened?
+                    session.delete(post)
+                    continue
                 break
             else:
                 session.delete(post)
-    return new_post
+    return queue_post
 
 
 def add_to_history(new_post, wall_id):
     with session_scope() as session:
         pic = session.query(Pic).filter_by(post_id=new_post['post_id'],
                                            service=new_post['service']).first()
-        if pic.history_item:
-            session.delete(pic.history_item)
-            session.flush()
-            session.refresh(pic)
-        pic.history_item = HistoryItem(wall_id=wall_id)
-        session.delete(pic.queue_item)
-        session.merge(pic)
+        pic.history_item = HistoryItem(wall_id=wall_id)  # orphaned history_item deletes itself
+        pic.queue_item = None  # orphaned queue_item deletes itself
 
 
+def add_ohaio(original_string):
+    return " ".join(map(lambda x: f'{x}@ohaio', original_string.split()))
 
-def main(log):
-    telebot.apihelper.proxy = REQUESTS_PROXY
 
-    log.debug('Checking queue for new posts')
-    new_post = check_queue()
-    if not new_post:
-        log.debug('No posts in queue')
-        return
-    log.debug('Queue have posts')
-    msg = ''
-    tel_msg = ''
-    if new_post.get('authors'):
-        msg += "Автор(ы): " + new_post['authors'] + "\n"
-        tel_msg += "Автор(ы): " + new_post['authors'] + "\n"
-    if new_post.get('chars'):
-        msg += "Персонаж(и): " + " ".join([x + "@ohaio" for x in new_post['chars'].split()]) + '\n'
-        tel_msg += "Персонаж(и): " + new_post['chars'] + '\n'
-    if new_post.get('copyright'):
-        msg += "Копирайт: " + " ".join([x + "@ohaio" for x in new_post['copyright'].split()])
-        tel_msg += "Копирайт: " + new_post['copyright']
-    if not msg:
-        msg = "#ohaioposter"
-    log.debug(f"Posting {service_db[new_post['service']]['name']}:{new_post['post_id']} to VK")
-    with session_scope() as session:
-        pic = session.query(Pic).filter_by(service=new_post['service'],
-                                           post_id=new_post['post_id']).first()
-        file_id = pic.file_id
-        if new_post['post_to_vk']:
-            try:
-                wall_id = post_to_vk(new_post, msg)
-            except Exception as ex:
-                o_logger.error(ex)
-                util.log_error(ex)
-                wall_id = -1
-            else:
-                last_poster = Setting(setting='last_poster', value=str(new_post['sender']))
-                session.merge(last_poster)
-        else:
-            wall_id = -1
-    log.debug('Adding to history')
-    add_to_history(new_post, wall_id)
-    log.debug('Posting to Telegram')
-    if file_id:
-        send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=file_id, caption=tel_msg,
-                   reply_markup=markups.gen_channel_inline(new_post, wall_id))
+def gen_msg(post, to_tg=False):
+    authors_list = post.get('authors')
+    if to_tg:
+        char_list = add_ohaio(post.get('chars', ''))
+        cr_list = add_ohaio(post.get('copyright', ''))
     else:
-        send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=QUEUE_FOLDER + new_post['pic_name'], caption=tel_msg,
-                   reply_markup=markups.gen_channel_inline(new_post, wall_id))
-    try:
-        post_to_tumblr(new_post)
-    except Exception as ex:
-        o_logger.error(ex)
-        util.log_error(ex)
-    os.remove(QUEUE_FOLDER + new_post['pic_name'])
-    send_message(new_post['sender'],
-                     f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
-    if new_post['sender'] != OWNER_ID:
-        send_message(OWNER_ID,
-                         f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
-    log.debug('Posting finished')
-    update_header()
+        char_list = post.get('chars', '')
+        cr_list = post.get('copyright', '')
+
+    authors = f"Автор(ы): {authors_list}\n" if authors_list else ""
+    characters = f"Персонаж(и): {char_list}\n" if char_list else ""
+    copyrights = f"Копирайт: {cr_list}" if cr_list else ""
+
+    ret_msg = f"{authors}{characters}{copyrights}" if any((authors, characters, copyrights)) else "#ohaioposter"
+    return ret_msg
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--force', dest='forced_post', action='store_true', help='Forced posting')
     parser.add_argument('-d', '--debug', dest='debugging', action='store_true', help='Verbose output')
     args = parser.parse_args()
 
-    o_logger = logging.getLogger('OhaioPosterLogger')
-    o_logger.setLevel(logging.DEBUG if args.debugging else logging.INFO)
-    o_fh = logging.FileHandler(LOG_FILE)
-    o_fh.setLevel(logging.DEBUG)
-    o_fh.setFormatter(logging.Formatter('%(asctime)s [Poster] %(levelname)-8s %(message)s'))
-    o_ch = logging.StreamHandler()
-    o_ch.setFormatter(logging.Formatter('%(asctime)s [Poster] %(levelname)-8s %(message)s'))
-    o_ch.setLevel(logging.DEBUG)
-    o_logger.addHandler(o_fh)
-    o_logger.addHandler(o_ch)
-    main(o_logger)
+    log = logging.getLogger(f'ohaio.{__name__}')
+    log.setLevel(logging.DEBUG if args.debugging else logging.INFO)
+    fh = logging.FileHandler(LOG_FILE)
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter('%(asctime)s [Poster] %(levelname)-8s %(message)s'))
+    sh = logging.StreamHandler()
+    sh.setFormatter(logging.Formatter('%(asctime)s [Poster] %(levelname)-8s %(message)s'))
+    sh.setLevel(logging.DEBUG)
+    log.addHandler(fh)
+    log.addHandler(sh)
+
+    log.debug('Checking queue for new posts')
+    new_post = check_queue(args)
+    if not new_post:
+        log.debug('No posts in queue')
+        sys.exit()
+    log.debug('Queue have posts')
+    log.debug(f"Posting {service_db[new_post['service']]['name']}:{new_post['post_id']} to VK")
+    wall_id = post_to_vk(new_post)
+    log.debug('Adding to history')
+    add_to_history(new_post, wall_id)
+    log.debug('Posting to Telegram')
+    asyncio.run(post_to_tg(new_post, wall_id))
+    log.debug('Posting to Tumblr')
+    try:
+        post_to_tumblr(new_post)
+    except Exception as ex:
+        log.error(ex)
+        util.log_error(ex)
+    if new_post.get('pic_name'):
+        os.remove(QUEUE_FOLDER + new_post['pic_name'])
+    asyncio.run(post_info(new_post))
+    log.debug('Posting finished')
+    update_header()
+
+
+if __name__ == '__main__':
+    main()

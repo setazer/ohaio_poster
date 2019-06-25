@@ -55,7 +55,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-d', '--debug', dest='debugging', action='store_true', help='Verbose output')
 script_args = parser.parse_args()
 logging.basicConfig(level=logging.INFO)
-log = logging.getLogger(f'ohaioposter.{__name__}')
+log = logging.getLogger(f'ohaio.{__name__}')
 log.setLevel(logging.DEBUG if script_args.debugging else logging.INFO)
 
 
