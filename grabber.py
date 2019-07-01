@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 
+import aiofiles as aiofiles
 import aiohttp
 from PIL import Image
 from bs4 import BeautifulSoup
@@ -15,16 +16,17 @@ async def metadata(service, post_id, pic_name=None):
         service_tag_api = 'https://' + service_db[service]['tag_api']
         service_login = 'https://' + service_db[service]['login_url']
         service_payload = service_db[service]['payload']
+        proxy = REQUESTS_PROXY
         async with aiohttp.ClientSession() as session:
             await session.post(service_login, data=service_payload)
-            async with session.get(service_api + post_id) as gel_xml:
+            async with session.get(service_api + post_id, proxy=proxy) as gel_xml:
                 try:
                     post = BeautifulSoup(await gel_xml.text(), 'lxml').posts.post
                 except (IndexError, NameError, AttributeError):
                     return (pic_name, '', '', '', '')
             pic_ext = os.path.splitext(post['sample_url'])[1]
             pic_name = service + '.' + post_id + pic_ext
-            async with session.get(service_tag_api + post['tags']) as tag_page:
+            async with session.get(service_tag_api + post['tags'], proxy=proxy) as tag_page:
                 tags = BeautifulSoup(await tag_page.text(), 'lxml').find_all('tag')
             authors = ' '.join(['#' + x['name'] for x in tags
                                 if x['type'] == '1' and x['name'] != '' and x['name'] != 'artist_request'])
@@ -39,12 +41,12 @@ async def metadata(service, post_id, pic_name=None):
         service_api = 'http://' + service_db[service]['post_api']
         service_login = 'http://' + service_db[service]['login_url']
         service_payload = service_db[service]['payload']
-        proxies = REQUESTS_PROXY
+        proxy = REQUESTS_PROXY
         async with aiohttp.ClientSession() as session:
             headers = {'user-agent': 'OhaioPoster',
                        'content-type': 'application/json; charset=utf-8'}
             await session.post(service_login, data=service_payload, headers=headers)
-            async with session.get(service_api.format(post_id), proxies=proxies) as req:
+            async with session.get(service_api.format(post_id), proxy=proxy) as req:
                 response = await req.json()
             if response['is_banned']:
                 return ('', '', [], [], [])
@@ -76,20 +78,22 @@ async def usable_url(url, service):
 async def download(url, filename):
     service = os.path.basename(filename).split('.')[0]
     await usable_url(url, service)
-    proxies = REQUESTS_PROXY
+    proxy = REQUESTS_PROXY
     headers = {'user-agent': 'OhaioPoster'}
     if service == 'pix':
         headers['Referer'] = 'https://app-api.pixiv.net/'
-        proxies = {}
+        proxy = None
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, stream=True, proxies=proxies, headers=headers) as req:
+        async with session.get(url, headers=headers, proxy=proxy) as req:
             total_length = req.headers.get('content-length', "0")
             if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
                 im = Image.open(filename)
                 im_hash = dhash(im, hash_size=8)
                 return str(im_hash)
             try:
-                im = Image.open(await req.read())
+                async with aiofiles.open(filename, 'wb') as f:
+                    await f.write(await req.read())
+                im = Image.open(filename)
             except OSError:
                 return None
     aspect = im.height / im.width

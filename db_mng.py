@@ -428,24 +428,20 @@ def create_pic(service, post_id, new_post):
             session.add(pic)
             session.flush()
             session.refresh(pic)
-    return pic.id
+        return pic.id
 
 
-def append_pic_data(pic_id, queue_item=None, monitor_item=None, file_id=None):
+def append_pic_data(pic_id, data: dict):
     with session_scope() as session:
         pic = session.query(Pic).filter_by(id=pic_id).first()
-        if queue_item:
-            pic.queue_item = queue_item
-        if monitor_item:
-            pic.monitor_item = monitor_item
-        if file_id:
-            pic.file_id = file_id
+        for key, value in data.items():
+            setattr(pic, key, value)
 
 
 def get_queue_stats(sender):
     with session_scope() as session:
         pics_total = session.query(QueueItem).count()
-        user_total = session.query(QueueItem).filter_by(sender=sender.id).count()
+        user_total = session.query(QueueItem).filter_by(sender=sender).count()
     return pics_total, user_total
 
 

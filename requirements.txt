@@ -3,6 +3,7 @@ ImageHash
 Pillow
 PixivPy
 SQLAlchemy
+aiofiles
 aiogram
 aiohttp
 aiohttp-socks

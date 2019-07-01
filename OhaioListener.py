@@ -195,7 +195,8 @@ async def refill_monitor(message):
                                                                                            post_id))
                         monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
                         file_id = mon_msg.photo[0].file_id
-                        await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+                        data = {'monitor_item': monitor_item, 'file_id': file_id}
+                        await in_thread(append_pic_data, pic_id=pic_id, data=data)
     await send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
 
@@ -259,12 +260,12 @@ async def get_artist_suggestions(tag, service):
     service_artist_api = 'http://' + service_db[service]['artist_api']
     service_login = 'http://' + service_db[service]['login_url']
     service_payload = service_db[service]['payload']
-    proxies = REQUESTS_PROXY
+    proxy = REQUESTS_PROXY
     headers = {'user-agent': 'OhaioPosterBot',
                'content-type': 'application/json; charset=utf-8'}
     async with aiohttp.ClientSession() as session:
         await session.post(service_login, data=service_payload, headers=headers)
-        async with session.get(service_artist_api.format(tag), proxies=proxies) as resp:
+        async with session.get(service_artist_api.format(tag), proxy=proxy) as resp:
             response = await resp.json()
     suggestions = {artist['name']: artist['other_names'] for artist in response}
     return suggestions
@@ -344,10 +345,12 @@ async def callback_finish_monitor(call, callback_data):
             deleted[service_db[item.service]['name']].append(item.post_id)
         else:
             queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
-            await in_thread(append_pic_data, pic_id=item.pic_id, queue_item=queue_item)
+            data = {'queue_item': queue_item, 'monitor_item': None}
+            await in_thread(append_pic_data, pic_id=item.pic_id, data=data)
             await delete_message(TELEGRAM_CHANNEL_MON, item.tele_msg)
             move_mon_to_q(item.pic_name)
-            await in_thread(delete_pic_by_id, item.pic_id)
+
+            # await in_thread(delete_pic_by_id, item.pic_id)
             added['count'] = added['count'] + 1
             added[service_db[item.service]['name']].append(item.post_id)
         if i % 5 == 0:
@@ -682,7 +685,8 @@ async def queue_pixiv_illust(sender, post_id):
                                                                                    post_id))
                 monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 file_id = mon_msg.photo[0].file_id
-                await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+                data = {'monitor_item': monitor_item, 'file_id': file_id}
+                await in_thread(append_pic_data, pic_id=pic_id, data=data)
         await delete_message(pixiv_msg.chat.id, pixiv_msg.message_id)
     else:
         await send_message(chat_id=sender.id, text="Ошибка при получении данных")
@@ -743,15 +747,6 @@ async def on_shutdown(app):
     await bot.delete_webhook()
 
 
-if __name__ == '__main__':
-    if script_args.debugging:
-        asyncio.run(notify_admins("I'm alive!"))
-        executor.start_polling(dp, reset_webhook=True)
-    else:
-        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
-                      skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
-
-
 def get_monitor_before_id(pic_id):
     with session_scope() as session:
         mon_id = session.query(MonitorItem).filter_by(pic_id=pic_id).first().id
@@ -784,3 +779,12 @@ def is_pic_used(sender, service, post_id, pics_total, user_total):
                     f"Всего пикч: {pics_total + 1}."
                 return text, None, del_msg_chat_id, del_msg_id
         return None, None, None, None
+
+
+if __name__ == '__main__':
+    if script_args.debugging:
+        asyncio.run(notify_admins("I'm alive!"))
+        executor.start_polling(dp, reset_webhook=True)
+    else:
+        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
+                      skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)

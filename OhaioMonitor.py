@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-import asyncio
 import json
 import logging
 from collections import namedtuple
 from urllib.parse import quote
 
 import aiohttp
+from aiogram.utils import executor
 from sqlalchemy.orm import joinedload
 
 import grabber
 import markups
-from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message
+from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message, dp
 from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
     MONITOR_FOLDER, SERVICE_DEFAULT, MAX_NEW_POST_COUNT
 from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
@@ -32,14 +32,14 @@ async def check_recommendations(new_tag=None):
     api_key = service_db[service]['payload']['api_key']
     # post_api = 'https://' + service_db[service]['post_api']
     new_posts = {}
-    proxies = REQUESTS_PROXY
+    proxy = REQUESTS_PROXY
     async with aiohttp.ClientSession() as session:
         tags_slices = (list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5))
         for (n, tags_slice) in enumerate(tags_slices, 1):
             tag_aliases = {}
             tags_url = (f"{tags_api.format('+'.join('~' + quote(tag) for tag in tags_slice))}"
                         f"+-rating:explicit&login={login}&api_key={api_key}&limit=200")
-            async with session.get(tags_url, proxies=proxies) as resp:
+            async with session.get(tags_url, proxy=proxy) as resp:
                 try:
                     posts = await resp.json()
                 except json.decoder.JSONDecodeError as ex:
@@ -71,7 +71,7 @@ async def check_recommendations(new_tag=None):
                 except KeyError:  # post artist not in current tags slice - means database have artist's old alias
                     tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
                     for artist in post['tag_string_artist'].split():
-                        async with session.get(tag_aliases_api.format(artist), proxies=proxies) as resp:
+                        async with session.get(tag_aliases_api.format(artist), proxy=proxy) as resp:
                             tags_json = await resp.json()
                         tag_antecedents = [tag for item in tags_json for tag in tags_slice
                                            if item['status'] == 'active' and tag in item['antecedent_name']]
@@ -205,4 +205,4 @@ if __name__ == '__main__':
     sh.setLevel(logging.DEBUG)
     log.addHandler(fh)
     log.addHandler(sh)
-    asyncio.run(check_recommendations())
+    executor.start(dp, check_recommendations())
