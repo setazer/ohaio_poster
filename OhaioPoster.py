@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import argparse
-import asyncio
 import logging
 import os
 import sys
@@ -10,11 +9,12 @@ import pytumblr
 import requests
 import vk_requests
 from PIL import Image, ImageDraw, ImageFont
+from aiogram.utils import executor
 from sqlalchemy import func
 
 import markups
 import util
-from bot_mng import send_photo, send_message
+from bot_mng import send_photo, send_message, dp
 from creds import (TELEGRAM_CHANNEL, OWNER_ID,
                    LOG_FILE, QUEUE_FOLDER, QUEUE_LIMIT,
                    VK_TOKEN, VK_GROUP_ID,
@@ -45,13 +45,22 @@ def update_header():
 
 
 def get_current_album():
+    api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
     with session_scope() as session:
         cur_album = session.query(Setting).filter_by(setting='current_album').first()
         num_photos = session.query(Setting).filter_by(setting='num_photos').first()
+        if not num_photos:
+            num_photos = Setting(setting='num_photos', value="0")
+            session.add(num_photos)
+        if not cur_album:
+            new_album = create_album(api, 1)
+            cur_album = Setting(setting='current_album', value=str(new_album['id']))
+            session.add(cur_album)
+            return str(new_album['id'])
         if int(num_photos.value) < 10000:
             return cur_album.value
         else:
-            api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
+
             albums = api.photos.getAlbums(owner_id='-' + VK_GROUP_ID, album_ids=(int(cur_album.value),))['items']
             # latest_album = [id for id in sorted(albums, key=lambda k: k['updated'], reverse=True)][0]
             latest_album = albums[0]
@@ -68,6 +77,11 @@ def get_current_album():
             num_photos.value = '0'
             return str(new_album['id'])
 
+
+def create_album(api, number):
+    new_album = api.photos.createAlbum(title=f"Feed #{number:03}", group_id=VK_GROUP_ID,
+                                       upload_by_admins_only=1, comments_disabled=1)
+    return new_album
 
 def post_to_vk(new_post):
     log = logging.getLogger(f'ohaio.{__name__}')
@@ -111,7 +125,7 @@ def post_to_vk_via_api(new_post, msg):
 
 async def post_to_tg(new_post, wall_id):
     photo = new_post.get('file_id', f"{QUEUE_FOLDER}{new_post['pic_name']}")
-    await send_photo(chat_id=TELEGRAM_CHANNEL, photo_filename=photo,
+    await send_photo(chat_id=TELEGRAM_CHANNEL, photo=photo,
                      caption=gen_msg(new_post, True), reply_markup=markups.gen_channel_inline(new_post, wall_id))
 
 
@@ -197,7 +211,7 @@ def add_ohaio(original_string):
 
 def gen_msg(post, to_tg=False):
     authors_list = post.get('authors')
-    if to_tg:
+    if not to_tg:
         char_list = add_ohaio(post.get('chars', ''))
         cr_list = add_ohaio(post.get('copyright', ''))
     else:
@@ -240,7 +254,7 @@ def main():
     log.debug('Adding to history')
     add_to_history(new_post, wall_id)
     log.debug('Posting to Telegram')
-    asyncio.run(post_to_tg(new_post, wall_id))
+    executor.start(dp(), post_to_tg(new_post, wall_id))
     log.debug('Posting to Tumblr')
     try:
         post_to_tumblr(new_post)
@@ -249,7 +263,7 @@ def main():
         util.log_error(ex)
     if new_post.get('pic_name'):
         os.remove(QUEUE_FOLDER + new_post['pic_name'])
-    asyncio.run(post_info(new_post))
+    executor.start(dp(), post_info(new_post))
     log.debug('Posting finished')
     update_header()
 

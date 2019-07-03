@@ -11,14 +11,17 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher.filters.state import StatesGroup, State
 from aiogram.utils import exceptions
 
-from creds import TELEGRAM_TOKEN, REQUESTS_PROXY
+from creds import TELEGRAM_TOKEN, BOT_PROXY
 
 # bot = telebot.TeleBot(TELEGRAM_TOKEN)
 log = logging.getLogger('ohaioposter')
 loop = asyncio.get_event_loop()
-bot = aiogram.Bot(TELEGRAM_TOKEN, proxy=REQUESTS_PROXY)
+bot = aiogram.Bot(TELEGRAM_TOKEN, proxy=BOT_PROXY)
 storage = MemoryStorage()
-dp = aiogram.Dispatcher(bot, loop=loop, storage=storage)
+
+
+def dp():
+    return aiogram.Dispatcher(bot, loop=loop, storage=storage)
 bot.start_time = dt.fromtimestamp(time.perf_counter())
 bot.users = {}
 bot.paginators = {}

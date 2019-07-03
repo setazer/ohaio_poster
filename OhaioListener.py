@@ -35,7 +35,7 @@ from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_
     delete_duplicate, get_queue_picnames, get_delete_queue, is_tag_exists, write_new_tag, create_pic, append_pic_data, \
     get_queue_stats, get_hashes, get_bot_admins, add_new_pic, is_new_shutdown, load_users, save_users
 from markups import InlinePaginator
-from util import in_thread, human_readable
+from util import in_thread, human_readable, ignored
 
 
 def bot_access(access_number=0):
@@ -65,6 +65,7 @@ log.setLevel(logging.DEBUG if script_args.debugging else logging.INFO)
 
 log.debug("Initializing bot")
 load_users()
+dp = dp()
 
 
 async def say_to_owner(text):
@@ -72,7 +73,13 @@ async def say_to_owner(text):
 
 
 def move_mon_to_q(filename):
-    os.rename(f"{MONITOR_FOLDER}{filename}", f"{QUEUE_FOLDER}{filename}")
+    with ignored(FileExistsError):
+        os.rename(f"{MONITOR_FOLDER}{filename}", f"{QUEUE_FOLDER}{filename}")
+
+
+@dp.errors_handler()
+async def error_handler(update, error):
+    log.error(f"{update}\n\n{error}")
 
 
 @dp.message_handler(commands=['start'])
@@ -783,8 +790,8 @@ def is_pic_used(sender, service, post_id, pics_total, user_total):
 
 if __name__ == '__main__':
     if script_args.debugging:
-        asyncio.run(notify_admins("I'm alive!"))
+        # executor.start(dp, notify_admins("I'm alive!"))
         executor.start_polling(dp, reset_webhook=True)
     else:
-        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL, on_startup=on_startup, on_shutdown=on_shutdown,
+        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL_PATH, on_startup=on_startup, on_shutdown=on_shutdown,
                       skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)

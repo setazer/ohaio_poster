@@ -4,6 +4,7 @@ import functools
 import time
 import traceback
 from concurrent.futures.thread import ThreadPoolExecutor
+from contextlib import contextmanager
 
 from creds import ERROR_LOGS_DIR
 
@@ -33,3 +34,11 @@ def human_readable(delta):
 async def in_thread(func, *args, **kwargs):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, functools.partial(func, *args, **kwargs))
+
+
+@contextmanager
+def ignored(*exceptions):
+    try:
+        yield
+    except exceptions:
+        pass

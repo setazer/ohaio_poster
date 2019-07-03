@@ -483,6 +483,7 @@ def load_users():
                      session.query(User.user_id, User.access, User.limit).all()}
     if not bot.users:
         bot.users = {OWNER_ID: {"access": 100, "limit": QUEUE_LIMIT}}
+        save_users()
     log.debug(f'Loaded users: {", ".join(str(user) for user in bot.users)}')
 
 

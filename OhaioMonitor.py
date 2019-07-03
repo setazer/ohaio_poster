@@ -163,7 +163,8 @@ async def check_recommendations(new_tag=None):
                 monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
                                            to_del=not new_post['safe'] or is_dupe)
                 file_id = mon_msg.photo[0].file_id
-                await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+                data = {'monitor_item': monitor_item, 'file_id': file_id}
+                await in_thread(append_pic_data, pic_id=pic_id, data=data)
                 await in_thread(update_tag_last_check, service=service, tag=new_post['tag'], last_check=int(post_id))
         await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
@@ -205,4 +206,4 @@ if __name__ == '__main__':
     sh.setLevel(logging.DEBUG)
     log.addHandler(fh)
     log.addHandler(sh)
-    executor.start(dp, check_recommendations())
+    executor.start(dp(), check_recommendations())
