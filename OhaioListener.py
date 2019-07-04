@@ -65,7 +65,6 @@ log.setLevel(logging.DEBUG if script_args.debugging else logging.INFO)
 
 log.debug("Initializing bot")
 load_users()
-dp = dp()
 
 
 async def say_to_owner(text):
@@ -226,11 +225,11 @@ def get_wall_page(api, page_n):
 
 async def refill_history():
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
-    postsnum = await in_thread(get_wall_total, api=api)
-    max_queries = (postsnum - 1) // 100
+    post_count = await in_thread(get_wall_total, api=api)
+    max_queries = (post_count - 1) // 100
     post_history = {}
-    for querynum in range(max_queries + 1):
-        posts = await in_thread(get_wall_page, api=api, page_n=querynum)
+    for query_count in range(max_queries + 1):
+        posts = await in_thread(get_wall_page, api=api, page_n=query_count)
         for post in posts:
             if any(service_db[x]['post_url'] in post['text'] for x in service_db):
                 links = post['text'].split()
@@ -745,12 +744,16 @@ async def notify_admins(text):
         await send_message(admin, text, disable_notification=True)
 
 
-async def on_startup(dp):
+async def on_startup_webhook(dp):
     await notify_admins("I'm alive!")
     await bot.set_webhook(WEBHOOK_URL)
 
 
-async def on_shutdown(app):
+async def on_startup_polling(dp):
+    await notify_admins("I'm alive!")
+
+
+async def on_shutdown(dp):
     await bot.delete_webhook()
 
 
@@ -790,8 +793,7 @@ def is_pic_used(sender, service, post_id, pics_total, user_total):
 
 if __name__ == '__main__':
     if script_args.debugging:
-        # executor.start(dp, notify_admins("I'm alive!"))
-        executor.start_polling(dp, reset_webhook=True)
+        executor.start_polling(dp, reset_webhook=True, on_startup=on_startup_polling)
     else:
-        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL_PATH, on_startup=on_startup, on_shutdown=on_shutdown,
-                      skip_updates=False, host=WEBHOOK_HOST, port=WEBHOOK_PORT)
+        start_webhook(dispatcher=dp, webhook_path=WEBHOOK_URL_PATH, on_startup=on_startup_webhook,
+                      on_shutdown=on_shutdown, host=WEBHOOK_HOST, port=WEBHOOK_PORT)

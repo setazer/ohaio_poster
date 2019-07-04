@@ -19,9 +19,7 @@ loop = asyncio.get_event_loop()
 bot = aiogram.Bot(TELEGRAM_TOKEN, proxy=BOT_PROXY)
 storage = MemoryStorage()
 
-
-def dp():
-    return aiogram.Dispatcher(bot, loop=loop, storage=storage)
+dp = aiogram.Dispatcher(bot, loop=loop, storage=storage)
 bot.start_time = dt.fromtimestamp(time.perf_counter())
 bot.users = {}
 bot.paginators = {}

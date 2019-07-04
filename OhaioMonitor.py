@@ -15,7 +15,6 @@ from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUE
     MONITOR_FOLDER, SERVICE_DEFAULT, MAX_NEW_POST_COUNT
 from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
     fix_dupe_tag, save_tg_msg_to_monitor_item, update_tag_last_check
-from util import in_thread
 
 
 async def check_recommendations(new_tag=None):
@@ -25,8 +24,8 @@ async def check_recommendations(new_tag=None):
         await delete_message(repost_msg.chat.id, repost_msg.message_id)
     srvc_msg = await send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
     service = SERVICE_DEFAULT
-    used_pics = await in_thread(get_used_pics, include_queue=True)
-    hashes, tags_total, tags = await in_thread(get_info, service=service, new_tag=new_tag)
+    used_pics = get_used_pics(include_queue=True)
+    hashes, tags_total, tags = get_info(service=service, new_tag=new_tag)
     tags_api = 'http://' + service_db[service]['posts_api']
     login = service_db[service]['payload']['user']
     api_key = service_db[service]['payload']['api_key']
@@ -116,9 +115,9 @@ async def check_recommendations(new_tag=None):
                                            reply_markup=markups.gen_del_tag_markup(tag))
                 else:
                     tags[tag]['missing_times'] = 0
-                had_dupes, got_renamed = await in_thread(fix_dupe_tag, service=service, tag=tag,
-                                                         dupe_tag=tag_aliases.get(tag),
-                                                         missing_times=tags[tag]['missing_times'])
+                had_dupes, got_renamed = fix_dupe_tag(service=service, tag=tag,
+                                                      dupe_tag=tag_aliases.get(tag),
+                                                      missing_times=tags[tag]['missing_times'])
                 if had_dupes:
                     if got_renamed:
                         await send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
@@ -149,7 +148,7 @@ async def check_recommendations(new_tag=None):
         for post_id in srt_new_posts:
             new_post = new_posts[post_id]
             if new_post['pic_name']:
-                pic_id = await in_thread(create_pic, service=service, post_id=post_id, new_post=new_post)
+                pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
                 is_dupe = new_post['hash'] in hashes
                 if not is_dupe:
                     hashes[new_post['hash']] = post_id
@@ -164,24 +163,26 @@ async def check_recommendations(new_tag=None):
                                            to_del=not new_post['safe'] or is_dupe)
                 file_id = mon_msg.photo[0].file_id
                 data = {'monitor_item': monitor_item, 'file_id': file_id}
-                await in_thread(append_pic_data, pic_id=pic_id, data=data)
-                await in_thread(update_tag_last_check, service=service, tag=new_post['tag'], last_check=int(post_id))
+                append_pic_data(pic_id=pic_id, data=data)
+                update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
         await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
-MonitorData = namedtuple('MonitorData', ['id', 'tele_msg', 'to_del', 'pic_id', 'service', 'post_id', 'authors'])
+MonitorData = namedtuple('MonitorData',
+                         ['id', 'tele_msg', 'to_del', 'pic_id', 'service', 'post_id', 'file_id', 'authors'])
 
 
 def get_monitor():
     with session_scope() as session:
         mon_items = [MonitorData(mon_item.id, mon_item.tele_msg, mon_item.to_del, mon_item.pic.id,
-                                 mon_item.pic.service, mon_item.pic.post_id, mon_item.pic.authors) for mon_item in
+                                 mon_item.pic.service, mon_item.pic.post_id, mon_item.pic.authors, mon_item.file_id) for
+                     mon_item in
                      session.query(MonitorItem).options(joinedload(MonitorItem.pic)).order_by(MonitorItem.id).all()]
         return mon_items
 
 
 async def repost_previous_monitor_check():
-    mon_items = await in_thread(get_monitor)
+    mon_items = get_monitor()
     for mon_item in mon_items:
         await delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
         new_msg = await send_photo(TELEGRAM_CHANNEL_MON, mon_item.file_id,
@@ -192,7 +193,7 @@ async def repost_previous_monitor_check():
                                                                            mon_item.post_id,
                                                                            mon_item.to_del))
         if new_msg:
-            await in_thread(save_tg_msg_to_monitor_item, mon_id=mon_item.id, tg_msg=new_msg.message_id)
+            save_tg_msg_to_monitor_item(mon_id=mon_item.id, tg_msg=new_msg.message_id)
 
 
 if __name__ == '__main__':
@@ -206,4 +207,4 @@ if __name__ == '__main__':
     sh.setLevel(logging.DEBUG)
     log.addHandler(fh)
     log.addHandler(sh)
-    executor.start(dp(), check_recommendations())
+    executor.start(dp, check_recommendations())

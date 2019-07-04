@@ -226,7 +226,7 @@ def gen_msg(post, to_tg=False):
     return ret_msg
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-f', '--force', dest='forced_post', action='store_true', help='Forced posting')
     parser.add_argument('-d', '--debug', dest='debugging', action='store_true', help='Verbose output')
@@ -254,7 +254,7 @@ def main():
     log.debug('Adding to history')
     add_to_history(new_post, wall_id)
     log.debug('Posting to Telegram')
-    executor.start(dp(), post_to_tg(new_post, wall_id))
+    await post_to_tg(new_post, wall_id)
     log.debug('Posting to Tumblr')
     try:
         post_to_tumblr(new_post)
@@ -263,10 +263,10 @@ def main():
         util.log_error(ex)
     if new_post.get('pic_name'):
         os.remove(QUEUE_FOLDER + new_post['pic_name'])
-    executor.start(dp(), post_info(new_post))
+    await post_info(new_post)
     log.debug('Posting finished')
     update_header()
 
 
 if __name__ == '__main__':
-    main()
+    executor.start(dp, main())

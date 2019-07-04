@@ -22,9 +22,9 @@ DB_NAME = 'db_sample'
 DB_PORT = '3306' # default mysql port
 
 # Telegram config
-TELEGRAM_TOKEN = '' # get it from https://t.me/botfather
-TELEGRAM_CHANNEL = '' # channel id for posting pictures to
-TELEGRAM_CHANNEL_MON = '' # channel id where OhaioMonitor posts suggested pictures
+TELEGRAM_TOKEN = ''  # get it from https://t.me/botfather
+TELEGRAM_CHANNEL = ''  # channel id for posting pictures to
+TELEGRAM_CHANNEL_MON = 0  # channel id where OhaioMonitor posts suggested pictures
 TELEGRAM_CHANNEL_VKUPDATES = '' #  channel id where OhaioVKUpdates posts stuff happening in VK Group
 
 OWNER_ID = 0  # bot owner telegram id
@@ -43,8 +43,8 @@ WEBHOOK_URL = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
 # Misc
 QUEUE_LIMIT = 240
 MAX_NEW_POST_COUNT = 20
-BOT_PROXY = None
-REQUESTS_PROXY = None  # "http://proxy.host:1234" or "socks5://proxy.host:1234"
+BOT_PROXY = ''
+REQUESTS_PROXY = ''  # "http://proxy.host:1234" or "socks5://proxy.host:1234"
 
 MONITOR_FOLDER = path_join(getcwd(), 'pics', 'mon', '')
 makedirs(MONITOR_FOLDER, exist_ok=True)
