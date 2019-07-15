@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import json
 import logging
-from collections import namedtuple
+from collections import namedtuple, ChainMap
 from urllib.parse import quote
 
 import aiohttp
@@ -15,6 +16,18 @@ from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUE
     MONITOR_FOLDER, SERVICE_DEFAULT, MAX_NEW_POST_COUNT
 from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
     fix_dupe_tag, save_tg_msg_to_monitor_item, update_tag_last_check
+
+
+async def fetch(tag, url, session):
+    async with session.get(url, proxy=REQUESTS_PROXY) as resp:
+        print(f'Fetching {tag}')
+        return {tag: await resp.json()}
+
+
+async def bound_fetch(tag, sem, url, session):
+    # Getter function with semaphore.
+    async with sem:
+        return await fetch(tag, url, session)
 
 
 async def check_recommendations(new_tag=None):
@@ -166,6 +179,144 @@ async def check_recommendations(new_tag=None):
                 append_pic_data(pic_id=pic_id, data=data)
                 update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
         await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+
+
+async def new_check(new_tag=None):
+    if not new_tag:
+        repost_msg = await send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+        await repost_previous_monitor_check()
+        await delete_message(repost_msg.chat.id, repost_msg.message_id)
+    service = SERVICE_DEFAULT
+    srvc_msg = await send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
+    used_pics = get_used_pics(include_queue=True)
+    hashes, tags_total, tags = get_info(service=service, new_tag=new_tag)
+    tags_api = 'http://' + service_db[service]['posts_api']
+    tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
+    login = service_db[service]['payload']['user']
+    api_key = service_db[service]['payload']['api_key']
+    sem = asyncio.Semaphore(20)
+    async with aiohttp.ClientSession() as session:
+        requests = []
+        for tag in tags:
+            last_id = 0
+            tags_url = (f"{tags_api.format(f'+{quote(tag)}')}"
+                        f"+-rating:explicit+id:>{last_id}&login={login}&api_key={api_key}&limit=50")
+            requests.append(bound_fetch(tag, sem, tags_url, session))
+        posts = dict(ChainMap(*(await asyncio.gather(*requests))))
+        new_post_count = {}
+        new_posts = {}
+        for n, (tag, tag_posts) in enumerate(posts.items()):
+            tag_alias = None
+            post_tag = tag
+            missing_times = tags[tag]['missing_times']
+            if not tag_posts:
+                missing_times += 1
+                if missing_times > 4:
+                    await send_message(srvc_msg.chat.id,
+                                       f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
+                                       reply_markup=markups.gen_del_tag_markup(tag))
+                continue
+            else:
+                missing_times = 0
+            for post in tag_posts:
+                if tag not in post.get('tag_string_artist'):
+                    pass  # actualize tag name
+                new_post_count.setdefault(tag, 0)
+                try:
+                    post_id = post['id']
+                except TypeError as ex:
+                    # log.error(f'posts:{posts}')
+                    # log.error(ex)
+                    break
+                has_banned_tags = any(b_tag in post['tag_string'] for b_tag in BANNED_TAGS)
+                no_urls = not any([post.get('large_file_url'), post.get('file_url')])
+                invalid_ext = any(item in post['file_ext'] for item in ['webm', 'zip'])
+                if any((has_banned_tags, no_urls, invalid_ext)):
+                    continue
+                if (service, str(post_id)) in used_pics:
+                    continue
+                if tag_alias:
+                    post['tag_string_artist'].replace(tag, tag_alias)
+                if tag not in post['tag_string_artist']:
+                    for artist in post['tag_string_artist'].split():
+                        async with session.get(tag_aliases_api.format(artist), proxy=REQUESTS_PROXY) as resp:
+                            tags_json = await resp.json()
+                        if any(item['antecedent_name'] == tag and item['status'] == 'active' for item in tags_json):
+                            tag_alias = post_tag = artist
+                            break
+                else:
+                    await send_message(srvc_msg.chat.id,
+                                       f'Алиас тега для поста {service}:{post_id} с авторами '
+                                       f'"{post["tag_string_artist"]}" не найден.\n')
+                    continue
+                if new_post_count[post_tag] < MAX_NEW_POST_COUNT:
+                    new_post_count[post_tag] += 1
+                    new_posts[str(post_id)] = {
+                        'authors': ' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
+                        'chars': ' '.join({f"#{x.split('_(')[0]}" for x in
+                                           post.get('tag_string_character').split()}),
+                        'copyright': ' '.join({f'#{x}'.replace('_(series)', '') for x in
+                                               post['tag_string_copyright'].split()}),
+                        'tag': tag, 'sample_url': post['file_url'],
+                        'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
+                        'dimensions': f"{post['image_height']}x{post['image_width']}",
+                        'safe': post['rating'] == "s"}
+            if (n % 10) == 0:
+                await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                  reply_markup=markups.gen_status_markup(
+                                      f"{tag} [{n}/{tags_total}]",
+                                      f"Новых постов: {len(new_posts)}"))
+            had_dupes, got_renamed = fix_dupe_tag(service=service, tag=tag,
+                                                  dupe_tag=tag_alias,
+                                                  missing_times=missing_times)
+            if had_dupes:
+                if got_renamed:
+                    await send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_alias}"')
+                else:
+                    await send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_alias}"')
+        await edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
+        srt_new_posts = sorted(new_posts)
+        for (n, post_id) in enumerate(srt_new_posts, 1):
+            await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                              reply_markup=markups.gen_status_markup(
+                                  f"Новых постов: {len(new_posts)}",
+                                  f"Обработка поста: {n}/{len(srt_new_posts)}"))
+            new_post = new_posts[post_id]
+            if new_post['file_url'] or new_post['sample_url']:
+                pic_ext = new_post['file_ext']
+                pic_name = f"{service}.{post_id}.{pic_ext}"
+            else:
+                pic_name = ''
+            dl_url = new_post['file_url']
+            post_hash = await grabber.download(dl_url, MONITOR_FOLDER + pic_name)
+            if post_hash:
+                new_posts[post_id]['pic_name'] = pic_name
+                new_posts[post_id]['hash'] = post_hash
+            else:
+                new_posts[post_id]['pic_name'] = None
+        await edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
+        for post_id in srt_new_posts:
+            new_post = new_posts[post_id]
+            if new_post['pic_name']:
+                pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
+                is_dupe = new_post['hash'] in hashes
+                if not is_dupe:
+                    hashes[new_post['hash']] = post_id
+                mon_msg = await send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
+                                           f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
+                                           reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id,
+                                                                                   not new_post['safe'] or is_dupe,
+                                                                                   hashes[new_post[
+                                                                                       'hash']] if is_dupe else None))
+
+                monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
+                                           to_del=not new_post['safe'] or is_dupe)
+                file_id = mon_msg.photo[0].file_id
+                data = {'monitor_item': monitor_item, 'file_id': file_id}
+                append_pic_data(pic_id=pic_id, data=data)
+                update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
+        await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+    return new_posts
 
 
 MonitorData = namedtuple('MonitorData',

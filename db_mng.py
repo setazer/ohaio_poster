@@ -520,6 +520,7 @@ def fix_dupe_tag(service, tag, dupe_tag, missing_times):
                 db_tag.missing_times = missing_times
                 return True, False
         else:
+            db_tag.missing_times = missing_times
             return False, None
 
 
