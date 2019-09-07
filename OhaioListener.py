@@ -7,6 +7,7 @@ import os
 import re
 import time
 from functools import wraps
+from operator import attrgetter
 
 import cherrypy
 import dateutil.relativedelta as rd
@@ -386,6 +387,7 @@ def main():
                     deleted = {service_db[key]['name']: [] for key in service_db}
                     added = {service_db[key]['name']: [] for key in service_db}
                     deleted['count'] = added['count'] = 0
+                    mon_items.sort(key=attrgetter('pic.post_id'))
                     for i, item in enumerate(mon_items):
                         if item.to_del:
                             if os.path.exists(MONITOR_FOLDER + item.pic_name):
