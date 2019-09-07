@@ -9,6 +9,7 @@ import time
 from collections import namedtuple
 from datetime import datetime as dt
 from functools import wraps
+from operator import attrgetter
 
 import aiohttp
 import dateutil.relativedelta as rd
@@ -340,6 +341,7 @@ async def callback_finish_monitor(call, callback_data):
     added = {service_db[key]['name']: [] for key in service_db}
     deleted['count'] = added['count'] = 0
     mon_items = await in_thread(get_monitor_before_id, pic_id=pic_id)
+    mon_items.sort(key=attrgetter('post_id'))
     for i, item in enumerate(mon_items):
 
         if item.to_del:

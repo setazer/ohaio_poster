@@ -138,12 +138,12 @@ async def check_recommendations(new_tag=None):
                         await send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
 
         await edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
-        srt_new_posts = sorted(new_posts)
-        for (n, post_id) in enumerate(srt_new_posts, 1):
+        # srt_new_posts = sorted(new_posts)
+        for (n, post_id) in enumerate(new_posts, 1):
             await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                               reply_markup=markups.gen_status_markup(
                                   f"Новых постов: {len(new_posts)}",
-                                  f"Обработка поста: {n}/{len(srt_new_posts)}"))
+                                  f"Обработка поста: {n}/{len(new_posts)}"))
             new_post = new_posts[post_id]
             if new_post['file_url'] or new_post['sample_url']:
                 pic_ext = new_post['file_ext']
@@ -158,7 +158,7 @@ async def check_recommendations(new_tag=None):
             else:
                 new_posts[post_id]['pic_name'] = None
         await edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
-        for post_id in srt_new_posts:
+        for post_id in new_posts:
             new_post = new_posts[post_id]
             if new_post['pic_name']:
                 pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
