@@ -202,8 +202,7 @@ async def refill_monitor(message):
                                                                                            post_id))
                         monitor_item = MonitorItem(pic_name=entry, tele_msg=mon_msg.message_id)
                         file_id = mon_msg.photo[0].file_id
-                        data = {'monitor_item': monitor_item, 'file_id': file_id}
-                        await in_thread(append_pic_data, pic_id=pic_id, data=data)
+                        await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
     await send_message(chat_id=message.chat.id, text="Перезаполнение монитора завершено")
 
 
@@ -353,8 +352,7 @@ async def callback_finish_monitor(call, callback_data):
             deleted[service_db[item.service]['name']].append(item.post_id)
         else:
             queue_item = QueueItem(sender=call.from_user.id, pic_name=item.pic_name)
-            data = {'queue_item': queue_item, 'monitor_item': None}
-            await in_thread(append_pic_data, pic_id=item.pic_id, data=data)
+            await in_thread(append_pic_data, pic_id=item.pic_id, queue_item=queue_item, monitor_item=None)
             await delete_message(TELEGRAM_CHANNEL_MON, item.tele_msg)
             move_mon_to_q(item.pic_name)
 
@@ -693,8 +691,7 @@ async def queue_pixiv_illust(sender, post_id):
                                                                                    post_id))
                 monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                 file_id = mon_msg.photo[0].file_id
-                data = {'monitor_item': monitor_item, 'file_id': file_id}
-                await in_thread(append_pic_data, pic_id=pic_id, data=data)
+                await in_thread(append_pic_data, pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
         await delete_message(pixiv_msg.chat.id, pixiv_msg.message_id)
     else:
         await send_message(chat_id=sender.id, text="Ошибка при получении данных")

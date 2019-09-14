@@ -431,10 +431,10 @@ def create_pic(service, post_id, new_post):
         return pic.id
 
 
-def append_pic_data(pic_id, data: dict):
+def append_pic_data(pic_id, **kwargs):
     with session_scope() as session:
         pic = session.query(Pic).filter_by(id=pic_id).first()
-        for key, value in data.items():
+        for key, value in kwargs.items():
             setattr(pic, key, value)
 
 
@@ -526,7 +526,8 @@ def fix_dupe_tag(service, tag, dupe_tag, missing_times):
 
 def update_tag_last_check(service, tag, last_check):
     with session_scope() as session:
-        session.query(Tag).filter_by(tag=tag, service=service).first().last_check = last_check
+        tag_item = session.query(Tag).filter_by(tag=tag, service=service).first()
+        tag_item.last_check = max((tag_item.last_check, last_check))
 
 
 def save_tg_msg_to_monitor_item(mon_id, tg_msg):
