@@ -186,8 +186,8 @@ def check_recommendations(new_tag=None):
                 pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
                                                to_del=not new_post['safe'] or is_dupe)
                 pic.file_id = mon_msg.photo[0].file_id
-                session.query(Tag).filter_by(tag=new_post['tag'],
-                                             service=service).first().last_check = int(post_id)
+                tag_item = session.query(Tag).filter_by(tag=new_post['tag'], service=service).first()
+                tag_item.last_check = max((tag_item.last_check, int(post_id)))
     delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
