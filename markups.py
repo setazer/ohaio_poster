@@ -141,7 +141,7 @@ def gen_tag_fix_markup(service, tag, suggestions):
 
 def gen_channel_inline(new_post, wall_id):
     text = f"{service_db[new_post['service']]['name']} {new_post['post_id']}"
-    url = f"http://{service_db[new_post['service']]['post_url']}{new_post['post_id'].partition('_p')[0]}"
+    url = f"https://{service_db[new_post['service']]['post_url']}{new_post['post_id'].partition('_p')[0]}"
     channel_markup = types.InlineKeyboardMarkup()
     vk_link = f"https://vk.com/wall-{VK_GROUP_ID}_{wall_id}"
     buttons = []
