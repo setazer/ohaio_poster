@@ -102,7 +102,7 @@ def post_to_vk(new_post):
 
 
 def post_to_vk_via_api(new_post, msg):
-    post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id'].split('_p')[0]
+    post_url = 'https://' + service_db[new_post['service']]['post_url'] + new_post['post_id'].split('_p')[0]
     # Авторизация
     post_msg = f"{msg}\nОригинал: {post_url}"
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version=5.71)
@@ -138,7 +138,7 @@ async def post_info(new_post):
 
 
 def post_to_tumblr(new_post):
-    post_url = 'http://' + service_db[new_post['service']]['post_url'] + new_post['post_id'].split('_p')[0]
+    post_url = 'https://' + service_db[new_post['service']]['post_url'] + new_post['post_id'].split('_p')[0]
     msg = "Post source: " + post_url
     tags_raw = new_post.get('authors').split() + new_post.get('chars').split() + new_post.get('copyright').split()
     tags = list({tag.replace('_', ' ').replace('#', '') for tag in tags_raw})
