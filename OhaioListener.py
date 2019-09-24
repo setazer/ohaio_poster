@@ -28,8 +28,6 @@ from OhaioMonitor import check_recommendations
 from bot_mng import bot, send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, \
     send_document
 from creds import *
-
-from creds_template import service_db, REQUESTS_PROXY
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
 from markup_templates import InlinePaginator
 
@@ -607,10 +605,9 @@ def main():
         except IndexError:
             last_check = 0
         tag = param[0]
-        service = 'dan'
-        tags_api = 'http://' + service_db[service]['posts_api']
-        login = service_db[service]['payload']['user']
-        api_key = service_db[service]['payload']['api_key']
+        tags_api = 'http://' + service_db[SERVICE_DEFAULT]['posts_api']
+        login = service_db[SERVICE_DEFAULT]['payload']['user']
+        api_key = service_db[SERVICE_DEFAULT]['payload']['api_key']
         ses = requests.Session()
         proxies = REQUESTS_PROXY
         with session_scope() as session:
@@ -628,7 +625,7 @@ def main():
             if not posts:
                 send_message(message.chat.id, "Ошибка при получении постов тега. Отмена.")
                 return
-            rec_tag = Tag(tag=tag, service=service, last_check=last_check, missing_times=0)
+            rec_tag = Tag(tag=tag, service=SERVICE_DEFAULT, last_check=last_check, missing_times=0)
             session.add(rec_tag)
         send_message(message.chat.id, text="Тег добавлен")
         check_recommendations(tag)
