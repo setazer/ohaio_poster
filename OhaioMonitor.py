@@ -79,12 +79,13 @@ def check_recommendations(new_tag=None):
                 tag_aliases_api = 'http://' + service_db[service]['tag_alias_api']
                 stop = False
                 for artist in post['tag_string_artist'].split():
-                    tag_alias = [item for item in ses.get(tag_aliases_api.format(artist), proxies=proxies).json() if
-                                 item['status'] == 'active']
-                    if not tag_alias:
+                    artist_aliases = [item['antecedent_name'] for item in
+                                      ses.get(tag_aliases_api.format(artist), proxies=proxies).json() if
+                                      item['status'] == 'active']
+                    if not artist_aliases:
                         continue
                     for tag in tags_slice:
-                        if tag in tag_alias[0]['antecedent_name']:
+                        if tag in artist_aliases:
                             tag_aliases[tag] = artist
                             post_tag = tag
                             stop = True
