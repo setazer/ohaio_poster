@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import asyncio
+import json
 import logging
 import os
 import re
@@ -10,6 +11,7 @@ from collections import namedtuple
 from datetime import datetime as dt
 from functools import wraps
 from operator import attrgetter
+from urllib.parse import quote
 
 import aiohttp
 import dateutil.relativedelta as rd
@@ -23,20 +25,22 @@ from aiogram.utils import executor
 from aiogram.utils.executor import start_webhook
 from sqlalchemy.orm import joinedload
 
+
 import grabber
 import markups
 from OhaioMonitor import check_recommendations
 from bot_mng import bot, dp, NewNameSetup, LimitSetup
 from bot_mng import send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, send_document
 from creds import *
-from creds import service_db, TELEGRAM_CHANNEL_MON
-from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_scope, get_used_pics, save_pic, \
-    get_user_limits, get_posts_stats, clean_monitor, save_monitor_pic, is_pic_exists, \
-    mark_post_for_deletion, move_back_to_mon, delete_pic_by_id, replace_tag, delete_tag, rename_tag, clear_history, \
-    delete_duplicate, get_queue_picnames, get_delete_queue, is_tag_exists, write_new_tag, create_pic, append_pic_data, \
-    get_queue_stats, get_hashes, get_bot_admins, add_new_pic, is_new_shutdown, load_users, save_users
+from db_mng import (User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, session_scope, get_used_pics, save_pic,
+                    get_user_limits, get_posts_stats, clean_monitor, save_monitor_pic, is_pic_exists,
+                    mark_post_for_deletion, move_back_to_mon, delete_pic_by_id, replace_tag, delete_tag, rename_tag,
+                    clear_history,
+                    delete_duplicate, get_queue_picnames, get_delete_queue, is_tag_exists, write_new_tag, create_pic,
+                    append_pic_data,
+                    get_queue_stats, get_hashes, get_bot_admins, add_new_pic, is_new_shutdown, load_users, save_users)
 from markups import InlinePaginator
-from util import in_thread, human_readable, ignored
+from util import in_thread, human_readable, ignored, fetch
 
 
 def bot_access(access_number=0):
@@ -578,11 +582,21 @@ async def add_recommendation_tag(message):
     tag_exists = await in_thread(is_tag_exists, tag=tag)
     if tag_exists:
         await send_message(message.chat.id, text="Тег уже есть")
+    async with aiohttp.ClientSession() as session:
+        tags_api = 'https://' + service_db[SERVICE_DEFAULT]['posts_api']
+        login = service_db[SERVICE_DEFAULT]['payload']['user']
+        api_key = service_db[SERVICE_DEFAULT]['payload']['api_key']
+        try:
+            tags_url = f"{quote(tag)}&login={login}&api_key={api_key}&limit=1"
+            posts = await fetch(tag, tags_url, session)
+        except json.decoder.JSONDecodeError:
+            posts = []
+    if not posts:
+        await send_message(message.chat.id, text="Ошибка при получении постов тега. Отмена.")
         return
-    else:
-        new_tag = Tag(tag=tag, service=SERVICE_DEFAULT, last_check=last_check, missing_times=0)
-        await in_thread(write_new_tag, tag=new_tag)
-        await send_message(message.chat.id, text="Тег добавлен")
+    new_tag = Tag(tag=tag, service=SERVICE_DEFAULT, last_check=last_check, missing_times=0)
+    await in_thread(write_new_tag, tag=new_tag)
+    await send_message(message.chat.id, text="Тег добавлен")
     await check_recommendations(tag)
 
 

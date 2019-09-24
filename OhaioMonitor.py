@@ -12,16 +12,10 @@ from sqlalchemy.orm import joinedload
 import grabber
 import markups
 from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message, dp
-from creds import LOG_FILE, TELEGRAM_CHANNEL_MON, service_db, BANNED_TAGS, REQUESTS_PROXY, \
-    MONITOR_FOLDER, SERVICE_DEFAULT, MAX_NEW_POST_COUNT
+from creds import *
 from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
     fix_dupe_tag, save_tg_msg_to_monitor_item, update_tag_last_check
-
-
-async def fetch(tag, url, session):
-    async with session.get(url, proxy=REQUESTS_PROXY) as resp:
-        print(f'Fetching {tag}')
-        return {tag: await resp.json()}
+from util import fetch
 
 
 async def bound_fetch(tag, sem, url, session):
