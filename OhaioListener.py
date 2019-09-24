@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import datetime as dt
+import json
 import logging
 import math
 import os
@@ -8,6 +9,7 @@ import re
 import time
 from functools import wraps
 from operator import attrgetter
+from urllib.parse import quote
 
 import cherrypy
 import dateutil.relativedelta as rd
@@ -26,6 +28,8 @@ from OhaioMonitor import check_recommendations
 from bot_mng import bot, send_message, send_photo, answer_callback, edit_message, edit_markup, delete_message, \
     send_document
 from creds import *
+
+from creds_template import service_db, REQUESTS_PROXY
 from db_mng import User, Tag, Pic, QueueItem, HistoryItem, MonitorItem, Setting, session_scope
 from markup_templates import InlinePaginator
 
@@ -603,16 +607,30 @@ def main():
         except IndexError:
             last_check = 0
         tag = param[0]
-
+        service = 'dan'
+        tags_api = 'http://' + service_db[service]['posts_api']
+        login = service_db[service]['payload']['user']
+        api_key = service_db[service]['payload']['api_key']
+        ses = requests.Session()
+        proxies = REQUESTS_PROXY
         with session_scope() as session:
             rec_tag = session.query(Tag).filter_by(tag=tag, service='dan').first()
-            if not rec_tag:
-                rec_tag = Tag(tag=tag, service='dan', last_check=last_check, missing_times=0)
-                session.add(rec_tag)
-                send_message(message.chat.id, text="Тег добавлен")
-            else:
+            if rec_tag:
                 send_message(message.chat.id, text="Тег уже есть")
                 return
+            resp = ses.get(tags_api.format(f'{quote(tag)}&login={login}&api_key={api_key}&limit=1'),
+                           proxies=proxies)
+            try:
+                posts = resp.json()
+            except json.decoder.JSONDecodeError as ex:
+                util.log_error(ex, kwargs={'tag': tag, 'text': resp.text})
+                posts = []
+            if not posts:
+                send_message(message.chat.id, "Ошибка при получении постов тега. Отмена.")
+                return
+            rec_tag = Tag(tag=tag, service=service, last_check=last_check, missing_times=0)
+            session.add(rec_tag)
+        send_message(message.chat.id, text="Тег добавлен")
         check_recommendations(tag)
 
     @bot.message_handler(func=lambda m: m.chat.type == "private")
