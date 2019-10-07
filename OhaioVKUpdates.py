@@ -5,7 +5,7 @@ from aiogram import types
 from aiogram.utils.emoji import emojize
 from aiohttp import web
 
-from bot_mng import send_message
+from aiobot import bot
 from creds import TELEGRAM_CHANNEL_VKUPDATES, VK_GROUP_ID, VK_TOKEN
 from util import in_thread
 
@@ -31,41 +31,41 @@ def get_user_data(api, update):
 async def process_request(update) -> str:
     api = vk_requests.create_api(service_token=VK_TOKEN, api_version="5.80")
     if update.get("type") == "confirmation":
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":white_heavy_check_mark: Получен запрос от VK"))
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":white_heavy_check_mark: Получен запрос от VK"))
         return 'ad9b6a46'
     elif update.get("type") == "message_new":
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":envelope: В сообществе новое личное сообщение."),
-                           reply_markup=messages_link())
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(":envelope: В сообществе новое личное сообщение."),
+                               reply_markup=messages_link())
         return 'ok'
     elif update.get("type") == "photo_comment_new":
         user_data = await in_thread(get_user_data, api=api, update=update)
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                           emojize(
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                               emojize(
                                f":sunrise_over_mountains: Новый комментарий к фотографии.\n\n{user_data['first_name']} "
                                f"{user_data['last_name']}:\n{update['object']['text']}"),
-                           reply_markup=photo_link(update))
+                               reply_markup=photo_link(update))
         return 'ok'
     elif update.get("type") == "wall_repost":
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                           emojize(f":loudspeaker: Новый репост\nhttps://vk.com/wall"
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                               emojize(f":loudspeaker: Новый репост\nhttps://vk.com/wall"
                                    f"{update['object']['owner_id']}_{update['object']['id']}"),
-                           reply_markup=post_link(update))
+                               reply_markup=post_link(update))
         return 'ok'
     elif update.get("type") == "wall_reply_new":
         user_data = await in_thread(get_user_data, api=api, update=update)
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                           emojize(f":page_with_curl: Новый комментарий на стене.\n\n{user_data['first_name']} "
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                               emojize(f":page_with_curl: Новый комментарий на стене.\n\n{user_data['first_name']} "
                                    f"{user_data['last_name']}:\n{update['object']['text']}"),
-                           reply_markup=comment_link(update))
+                               reply_markup=comment_link(update))
         return 'ok'
     elif update.get("type") == "wall_post_new":
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(f":information: Новая запись на стене:\n\n"
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES, emojize(f":information: Новая запись на стене:\n\n"
                                                                f"{update['object']['text']}"),
-                           reply_markup=post_link(update))
+                               reply_markup=post_link(update))
         return 'ok'
     else:
-        await send_message(TELEGRAM_CHANNEL_VKUPDATES,
-                           emojize(f":question_mark: Необработанный апдейт:\n\n{repr(update)}"))
+        await bot.send_message(TELEGRAM_CHANNEL_VKUPDATES,
+                               emojize(f":question_mark: Необработанный апдейт:\n\n{repr(update)}"))
         print(emojize(f":question_mark: Необработанный апдейт:\n\n{repr(update)}"))
         return 'ok'
 

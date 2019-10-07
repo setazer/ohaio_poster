@@ -5,7 +5,7 @@ from aiogram.utils.callback_data import CallbackData
 from aiogram.utils.emoji import emojize
 from math import ceil
 
-from bot_mng import bot_action
+from aiobot import bot_action
 from creds import VK_GROUP_ID, service_db
 
 user_manager_cb = CallbackData('user', 'user_id', 'action')

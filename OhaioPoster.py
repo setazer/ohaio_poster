@@ -13,14 +13,8 @@ from aiogram.utils import executor
 from sqlalchemy import func
 
 import markups
-import util
-from bot_mng import send_photo, send_message, dp
-from creds import (TELEGRAM_CHANNEL, OWNER_ID,
-                   LOG_FILE, QUEUE_FOLDER, QUEUE_LIMIT,
-                   VK_TOKEN, VK_GROUP_ID,
-                   TUMBLR_CONSUMER_KEY, TUMBLR_CONSUMER_SECRET,
-                   TUMBLR_OAUTH_TOKEN, TUMBLR_OAUTH_SECRET, TUMBLR_BLOG_NAME)
-from creds import service_db
+from aiobot import bot, dp
+from creds import *
 from db_mng import Pic, QueueItem, HistoryItem, session_scope, Setting, User
 
 
@@ -83,14 +77,14 @@ def create_album(api, number):
                                        upload_by_admins_only=1, comments_disabled=1)
     return new_album
 
+
 def post_to_vk(new_post):
     log = logging.getLogger(f'ohaio.{__name__}')
     if new_post['post_to_vk']:
         try:
             wall_id = post_to_vk_via_api(new_post, gen_msg(new_post))
         except Exception as ex:
-            log.error(ex)
-            util.log_error(ex)
+            log.error("VK posting failed", exc_info=True)
             wall_id = -1
         else:
             with session_scope() as session:
@@ -125,16 +119,16 @@ def post_to_vk_via_api(new_post, msg):
 
 async def post_to_tg(new_post, wall_id):
     photo = new_post.get('file_id', f"{QUEUE_FOLDER}{new_post['pic_name']}")
-    await send_photo(chat_id=TELEGRAM_CHANNEL, photo=photo,
-                     caption=gen_msg(new_post, True), reply_markup=markups.gen_channel_inline(new_post, wall_id))
+    await bot.send_photo(chat_id=TELEGRAM_CHANNEL, photo=photo,
+                         caption=gen_msg(new_post, True), reply_markup=markups.gen_channel_inline(new_post, wall_id))
 
 
 async def post_info(new_post):
-    await send_message(new_post['sender'],
-                       f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
-    if new_post['sender'] != OWNER_ID:
-        await send_message(OWNER_ID,
+    await bot.send_message(new_post['sender'],
                            f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
+    if new_post['sender'] != OWNER_ID:
+        await bot.send_message(OWNER_ID,
+                               f"ID {new_post['post_id']} ({service_db[new_post['service']]['name']}) опубликован.")
 
 
 def post_to_tumblr(new_post):
@@ -259,8 +253,7 @@ async def main():
     try:
         post_to_tumblr(new_post)
     except Exception as ex:
-        log.error(ex)
-        util.log_error(ex)
+        log.error("Tumblr posting failed", exc_info=True)
     if new_post.get('pic_name'):
         os.remove(QUEUE_FOLDER + new_post['pic_name'])
     await post_info(new_post)

@@ -6,9 +6,9 @@ import vk_requests
 from sqlalchemy import and_
 
 import grabber
-from bot_mng import send_message, edit_markup
+from aiobot import send_message, edit_markup
 from creds import VK_TOKEN, VK_GROUP_ID, service_db, REQUESTS_PROXY, QUEUE_FOLDER, OWNER_ID, TELEGRAM_CHANNEL_MON
-from db_mng import session_scope, Setting, Tag, Pic, QueueItem
+from db_mng import session_scope, Setting, Tag, Pic, QueueItem, HistoryItem, User
 from markups import gen_status_markup
 
 
@@ -87,3 +87,83 @@ def fill_hashes():
                     edit_markup(h_msg.chat.id, h_msg.message_id,
                                 reply_markup=gen_status_markup(f"{pic_item.service}: {pic_item.post_id}",
                                                   f"{i}/{pics_total}"))
+
+
+def dump_db():
+    sep_line = "@@@@@@@@@@\n"
+    with session_scope() as session, open('dump.db', 'w') as db:
+        h_items = session.query(HistoryItem).all()
+        q_items = session.query(QueueItem).order_by(QueueItem.id).all()
+        users = session.query(User).all()
+        pics = session.query(Pic).all()
+        settings = session.query(Setting).all()
+        tags = session.query(Tag).all()
+        for item in pics:
+            line = f"{item.id}###{item.service}###{item.post_id}###{item.authors}###{item.chars}###{item.copyright}\n"
+            db.write(line)
+        db.write(sep_line)
+        for item in h_items:
+            line = f"{item.pic_id}###{item.wall_id}\n"
+            db.write(line)
+        db.write(sep_line)
+        for item in q_items:
+            line = f"{item.pic_id}###{item.sender}###{item.pic_name}\n"
+            db.write(line)
+        db.write(sep_line)
+        for item in users:
+            line = f"{item.user_id}###{item.access}\n"
+            db.write(line)
+        db.write(sep_line)
+        for item in settings:
+            line = f"{item.setting}###{item.value}\n"
+            db.write(line)
+        db.write(sep_line)
+        for item in tags:
+            line = f"{item.service}###{item.tag}###{item.last_check}###{item.missing_times}\n"
+            db.write(line)
+        print('Dump complete')
+
+
+def load_db():
+    sep_line = "@@@@@@@@@@\n"
+    with session_scope() as session, open('dump.db', 'r') as db:
+        pics = {}
+        for line in db:
+            if line == sep_line:
+                break
+            item = line[:-1].split('###')
+            pics[item[0]] = Pic(service=item[1], post_id=item[2], authors=item[3] if item[3] != 'None' else None,
+                                chars=item[4] if item[4] != 'None' else None,
+                                copyright=item[5] if item[5] != 'None' else None)
+        for line in db:
+            if line == sep_line:
+                break
+            item = line[:-1].split('###')
+            pic = pics[item[0]]
+            pic.history_item = HistoryItem(wall_id=item[1])
+        for line in db:
+            if line == sep_line:
+                break
+            item = line[:-1].split('###')
+            pic = pics[item[0]]
+            pic.queue_item = QueueItem(sender=item[1], pic_name=item[2])
+
+        for pic in pics.values():
+            session.add(pic)
+
+        for line in db:
+            if line == sep_line:
+                break
+            item = line[:-1].split('###')
+            user = User(user_id=item[0], access=item[1])
+            session.add(user)
+        for line in db:
+            if line == sep_line:
+                break
+            item = line[:-1].split('###')
+            setting = Setting(setting=item[0], value=item[1])
+            session.add(setting)
+        for line in db:
+            item = line[:-1].split('###')
+            tag = Tag(service=item[0], tag=item[1], last_check=item[2], missing_times=item[3])
+            session.add(tag)

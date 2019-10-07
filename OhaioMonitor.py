@@ -11,7 +11,7 @@ from sqlalchemy.orm import joinedload
 
 import grabber
 import markups
-from bot_mng import send_message, edit_message, edit_markup, send_photo, delete_message, dp
+from aiobot import bot, dp
 from creds import *
 from db_mng import MonitorItem, session_scope, get_used_pics, create_pic, append_pic_data, get_info, \
     fix_dupe_tag, save_tg_msg_to_monitor_item, update_tag_last_check
@@ -26,10 +26,10 @@ async def bound_fetch(tag, sem, url, session):
 
 async def check_recommendations(new_tag=None):
     if not new_tag:
-        repost_msg = await send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+        repost_msg = await bot.send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
         await repost_previous_monitor_check()
-        await delete_message(repost_msg.chat.id, repost_msg.message_id)
-    srvc_msg = await send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
+        await bot.delete_message(repost_msg.chat.id, repost_msg.message_id)
+    srvc_msg = await bot.send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
     service = SERVICE_DEFAULT
     used_pics = get_used_pics(include_queue=True)
     hashes, tags_total, tags = get_info(service=service, new_tag=new_tag)
@@ -89,10 +89,10 @@ async def check_recommendations(new_tag=None):
                             post_tag = tag
                             break
                     else:
-                        await send_message(srvc_msg.chat.id,
-                                           f'Алиас тега для поста {service}:{post_id} с авторами '
-                                           f'"{post["tag_string_artist"]}" не найден.\n'
-                                           f'Должен быть один из: {", ".join(tags_slice)}')
+                        await bot.send_message(srvc_msg.chat.id,
+                                               f'Алиас тега для поста {service}:{post_id} с авторами '
+                                               f'"{post["tag_string_artist"]}" не найден.\n'
+                                               f'Должен быть один из: {", ".join(tags_slice)}')
                         continue
 
                 if (new_post_count[post_tag] < MAX_NEW_POST_COUNT and
@@ -109,35 +109,36 @@ async def check_recommendations(new_tag=None):
                         'dimensions': f"{post['image_height']}x{post['image_width']}",
                         'safe': post['rating'] == "s"}
             if (n % 5) == 0:
-                await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                                  reply_markup=markups.gen_status_markup(
-                                      f"{tag} [{(n * 5)}/{tags_total}]",
-                                      f"Новых постов: {len(new_posts)}"))
+                await bot.edit_message_reply_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                                    reply_markup=markups.gen_status_markup(
+                                                        f"{tag} [{(n * 5)}/{tags_total}]",
+                                                        f"Новых постов: {len(new_posts)}"))
             for tag in tags_slice:
                 if not new_post_count[tag]:
                     tags[tag]['missing_times'] += 1
                     if tags[tag]['missing_times'] > 4:
-                        await send_message(srvc_msg.chat.id,
-                                           f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
-                                           reply_markup=markups.gen_del_tag_markup(tag))
+                        await bot.send_message(srvc_msg.chat.id,
+                                               f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
+                                               reply_markup=markups.gen_del_tag_markup(tag))
                 else:
                     tags[tag]['missing_times'] = 0
                 had_dupes, got_renamed = fix_dupe_tag(service=service, tag=tag,
                                                       dupe_tag=tag_aliases.get(tag),
                                                       missing_times=tags[tag]['missing_times'])
-                if had_dupes:
-                    if got_renamed:
-                        await send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
-                    else:
-                        await send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
+                if not had_dupes:
+                    continue
+                if got_renamed:
+                    await bot.send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_aliases[tag]}"')
+                else:
+                    await bot.send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_aliases[tag]}"')
 
-        await edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
+        await bot.edit_message_text("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
         # srt_new_posts = sorted(new_posts)
         for (n, post_id) in enumerate(new_posts, 1):
-            await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                              reply_markup=markups.gen_status_markup(
-                                  f"Новых постов: {len(new_posts)}",
-                                  f"Обработка поста: {n}/{len(new_posts)}"))
+            await bot.edit_message_reply_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                                reply_markup=markups.gen_status_markup(
+                                                    f"Новых постов: {len(new_posts)}",
+                                                    f"Обработка поста: {n}/{len(new_posts)}"))
             new_post = new_posts[post_id]
             if new_post['file_url'] or new_post['sample_url']:
                 pic_ext = new_post['file_ext']
@@ -151,36 +152,37 @@ async def check_recommendations(new_tag=None):
                 new_posts[post_id]['hash'] = post_hash
             else:
                 new_posts[post_id]['pic_name'] = None
-        await edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
+        await bot.edit_message_text("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
         for post_id in new_posts:
             new_post = new_posts[post_id]
-            if new_post['pic_name']:
-                pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
-                is_dupe = new_post['hash'] in hashes
-                if not is_dupe:
-                    hashes[new_post['hash']] = post_id
-                mon_msg = await send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
+            if not new_post['pic_name']:
+                continue
+            pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
+            is_dupe = new_post['hash'] in hashes
+            if not is_dupe:
+                hashes[new_post['hash']] = post_id
+            mon_msg = await bot.send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                            f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                            reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id,
                                                                                    not new_post['safe'] or is_dupe,
                                                                                    hashes[new_post[
                                                                                        'hash']] if is_dupe else None))
 
-                monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
-                                           to_del=not new_post['safe'] or is_dupe)
-                file_id = mon_msg.photo[0].file_id
-                append_pic_data(pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
-                update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
-        await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+            monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
+                                       to_del=not new_post['safe'] or is_dupe)
+            file_id = mon_msg.photo[0].file_id
+            append_pic_data(pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+            update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
+        await bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
 async def new_check(new_tag=None):
     if not new_tag:
-        repost_msg = await send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
+        repost_msg = await bot.send_message(TELEGRAM_CHANNEL_MON, "Перевыкладываю выдачу прошлой проверки")
         await repost_previous_monitor_check()
-        await delete_message(repost_msg.chat.id, repost_msg.message_id)
+        await bot.delete_message(repost_msg.chat.id, repost_msg.message_id)
     service = SERVICE_DEFAULT
-    srvc_msg = await send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
+    srvc_msg = await bot.send_message(TELEGRAM_CHANNEL_MON, "Получаю обновления тегов")
     used_pics = get_used_pics(include_queue=True)
     hashes, tags_total, tags = get_info(service=service, new_tag=new_tag)
     tags_api = 'http://' + service_db[service]['posts_api']
@@ -205,15 +207,15 @@ async def new_check(new_tag=None):
             if not tag_posts:
                 missing_times += 1
                 if missing_times > 4:
-                    await send_message(srvc_msg.chat.id,
-                                       f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
-                                       reply_markup=markups.gen_del_tag_markup(tag))
+                    await bot.send_message(srvc_msg.chat.id,
+                                           f"У тега {tag} нет постов уже после {tags[tag]['missing_times']} проверок",
+                                           reply_markup=markups.gen_del_tag_markup(tag))
                 continue
             else:
                 missing_times = 0
             for post in tag_posts:
                 if tag not in post.get('tag_string_artist'):
-                    pass  # actualize tag name
+                    pass  # TODO actualize tag name
                 new_post_count.setdefault(tag, 0)
                 try:
                     post_id = post['id']
@@ -238,9 +240,9 @@ async def new_check(new_tag=None):
                             tag_alias = post_tag = artist
                             break
                 else:
-                    await send_message(srvc_msg.chat.id,
-                                       f'Алиас тега для поста {service}:{post_id} с авторами '
-                                       f'"{post["tag_string_artist"]}" не найден.\n')
+                    await bot.send_message(srvc_msg.chat.id,
+                                           f'Алиас тега для поста {service}:{post_id} с авторами '
+                                           f'"{post["tag_string_artist"]}" не найден.\n')
                     continue
                 if new_post_count[post_tag] < MAX_NEW_POST_COUNT:
                     new_post_count[post_tag] += 1
@@ -255,25 +257,26 @@ async def new_check(new_tag=None):
                         'dimensions': f"{post['image_height']}x{post['image_width']}",
                         'safe': post['rating'] == "s"}
             if (n % 10) == 0:
-                await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                                  reply_markup=markups.gen_status_markup(
-                                      f"{tag} [{n}/{tags_total}]",
-                                      f"Новых постов: {len(new_posts)}"))
+                await bot.edit_message_reply_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                                    reply_markup=markups.gen_status_markup(
+                                                        f"{tag} [{n}/{tags_total}]",
+                                                        f"Новых постов: {len(new_posts)}"))
             had_dupes, got_renamed = fix_dupe_tag(service=service, tag=tag,
                                                   dupe_tag=tag_alias,
                                                   missing_times=missing_times)
-            if had_dupes:
-                if got_renamed:
-                    await send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_alias}"')
-                else:
-                    await send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_alias}"')
-        await edit_message("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
+            if not had_dupes:
+                continue
+            if got_renamed:
+                await bot.send_message(srvc_msg.chat.id, f'Удалён алиас "{tag}" тега "{tag_alias}"')
+            else:
+                await bot.send_message(srvc_msg.chat.id, f'Тег "{tag}" переименован в "{tag_alias}"')
+        await bot.edit_message_text("Выкачиваю сэмплы обновлений", srvc_msg.chat.id, srvc_msg.message_id)
         srt_new_posts = sorted(new_posts)
         for (n, post_id) in enumerate(srt_new_posts, 1):
-            await edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
-                              reply_markup=markups.gen_status_markup(
-                                  f"Новых постов: {len(new_posts)}",
-                                  f"Обработка поста: {n}/{len(srt_new_posts)}"))
+            await bot.edit_message_reply_markup(srvc_msg.chat.id, srvc_msg.message_id,
+                                                reply_markup=markups.gen_status_markup(
+                                                    f"Новых постов: {len(new_posts)}",
+                                                    f"Обработка поста: {n}/{len(srt_new_posts)}"))
             new_post = new_posts[post_id]
             if new_post['file_url'] or new_post['sample_url']:
                 pic_ext = new_post['file_ext']
@@ -287,27 +290,28 @@ async def new_check(new_tag=None):
                 new_posts[post_id]['hash'] = post_hash
             else:
                 new_posts[post_id]['pic_name'] = None
-        await edit_message("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
+        await bot.edit_message_text("Выкладываю обновления", srvc_msg.chat.id, srvc_msg.message_id)
         for post_id in srt_new_posts:
             new_post = new_posts[post_id]
-            if new_post['pic_name']:
-                pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
-                is_dupe = new_post['hash'] in hashes
-                if not is_dupe:
-                    hashes[new_post['hash']] = post_id
-                mon_msg = await send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
+            if not new_post['pic_name']:
+                continue
+            pic_id = create_pic(service=service, post_id=post_id, new_post=new_post)
+            is_dupe = new_post['hash'] in hashes
+            if not is_dupe:
+                hashes[new_post['hash']] = post_id
+            mon_msg = await bot.send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                            f"#{new_post['tag']} ID: {post_id}\n{new_post['dimensions']}",
                                            reply_markup=markups.gen_rec_new_markup(pic_id, service, post_id,
                                                                                    not new_post['safe'] or is_dupe,
                                                                                    hashes[new_post[
                                                                                        'hash']] if is_dupe else None))
 
-                monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
-                                           to_del=not new_post['safe'] or is_dupe)
-                file_id = mon_msg.photo[0].file_id
-                append_pic_data(pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
-                update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
-        await delete_message(srvc_msg.chat.id, srvc_msg.message_id)
+            monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'],
+                                       to_del=not new_post['safe'] or is_dupe)
+            file_id = mon_msg.photo[0].file_id
+            append_pic_data(pic_id=pic_id, monitor_item=monitor_item, file_id=file_id)
+            update_tag_last_check(service=service, tag=new_post['tag'], last_check=int(post_id))
+        await bot.delete_message(srvc_msg.chat.id, srvc_msg.message_id)
     return new_posts
 
 
@@ -327,14 +331,14 @@ def get_monitor():
 async def repost_previous_monitor_check():
     mon_items = get_monitor()
     for mon_item in mon_items:
-        await delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
-        new_msg = await send_photo(TELEGRAM_CHANNEL_MON, mon_item.file_id,
-                                   caption=f"{mon_item.authors}\n"
-                                   f"ID: {mon_item.post_id}",
-                                   reply_markup=markups.gen_rec_new_markup(mon_item.id,
-                                                                           mon_item.service,
-                                                                           mon_item.post_id,
-                                                                           mon_item.to_del))
+        await bot.delete_message(TELEGRAM_CHANNEL_MON, mon_item.tele_msg)
+        new_msg = await bot.send_photo(TELEGRAM_CHANNEL_MON, mon_item.file_id,
+                                       caption=f"{mon_item.authors}\n"
+                                               f"ID: {mon_item.post_id}",
+                                       reply_markup=markups.gen_rec_new_markup(mon_item.id,
+                                                                               mon_item.service,
+                                                                               mon_item.post_id,
+                                                                               mon_item.to_del))
         if new_msg:
             save_tg_msg_to_monitor_item(mon_id=mon_item.id, tg_msg=new_msg.message_id)
 

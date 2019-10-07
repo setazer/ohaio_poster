@@ -12,4 +12,5 @@ lxml
 mysqlclient
 python-dateutil
 pytumblr
+requests
 vk-requests
