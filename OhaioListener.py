@@ -682,7 +682,7 @@ def main():
         else:
             send_message(message.chat.id, "Не распарсил.")
 
-    def queue_pixiv_illust(sender, post_id):
+    def queue_pixiv_illust(sender, pix_post_id):
         service = 'pix'
         with session_scope() as session:
             queue = [(queue_item.pic.service, queue_item.pic.post_id) for queue_item in
@@ -695,7 +695,7 @@ def main():
         api = pixivpy3.AppPixivAPI()
         api.login(service_db['pix']['payload']['user'],
                   service_db['pix']['payload']['pass'])
-        req = api.illust_detail(int(post_id))
+        req = api.illust_detail(int(pix_post_id))
         if not req.get('error', False):
             pixiv_msg = send_message(chat_id=sender.id, text="Получены данные о работе, скачивание пикч")
             new_posts = {}
@@ -716,7 +716,7 @@ def main():
                             reply_markup=markup_templates.gen_status_markup(f"{idx}/{total}"))
                 pic_hash = grabber.download(url, MONITOR_FOLDER + pic_name)
                 if pic_hash:
-                    new_posts[post_id] = {'pic_name': pic_name, 'authors': "#" + req['illust']['user']['account'],
+                    new_posts[post_id] = {'pic_name': pic_name, 'authors': f"#{req['illust']['user']['account']}",
                                           'chars': '', 'copyright': '', 'hash': pic_hash}
                 else:
                     send_message(sender.id, f"Не удалось скачать {pic_name}")
@@ -745,7 +745,7 @@ def main():
                         mon_msg = send_photo(TELEGRAM_CHANNEL_MON, MONITOR_FOLDER + new_post['pic_name'],
                                              f"{new_post['authors']} ID: {post_id}",
                                              reply_markup=markup_templates.gen_rec_new_markup(pic.id, service,
-                                                                                              pic.post_id))
+                                                                                              pix_post_id))
                         pic.monitor_item = MonitorItem(tele_msg=mon_msg.message_id, pic_name=new_post['pic_name'])
                         pic.file_id = mon_msg.photo[0].file_id
             delete_message(pixiv_msg.chat.id, pixiv_msg.message_id)

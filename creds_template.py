@@ -81,7 +81,7 @@ service_db = {'gel':{'name':'Gelbooru',
               'pix': {'name': 'Pixiv',
                       'author_url': 'www.pixiv.net/member.php?id=',
                       'base_url': 'www.pixiv.net',
-                      'post_url': 'www.pixiv.net/member_illust.php?mode=medium&illust_id=',
+                      'post_url': 'www.pixiv.net/artworks/',
                       'payload': {'user': 'username',
                                   'pass': 'passWORD'}}
               }

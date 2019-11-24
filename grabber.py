@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
 
+import pixivpy3
 import requests
 from PIL import Image
 from bs4 import BeautifulSoup
@@ -64,7 +65,8 @@ def metadata(service, post_id, pic_name=None):
         authors = []
         characters = []
         copyrights = []
-    return (pic_name, direct, authors, characters, copyrights)
+    return pic_name, direct, authors, characters, copyrights
+
 
 def usable_url(url, service):
     if url.startswith('//'):
@@ -74,28 +76,28 @@ def usable_url(url, service):
     return url
 
 
+def get_pixiv_pic(url, filename):
+    api = pixivpy3.AppPixivAPI()
+    api.download(url, path='', name=filename)
+
+
 def download(url, filename):
     service = os.path.basename(filename).split('.')[0]
     usable_url(url, service)
     proxies = REQUESTS_PROXY
     headers = {'user-agent': 'OhaioPoster'}
     if service == 'pix':
-        headers['Referer'] = 'https://app-api.pixiv.net/'
-        proxies = {}
+        get_pixiv_pic(url, filename)
+    else:
+        try:
+            req = requests.get(url, stream=True, proxies=proxies, headers=headers)
+            # small hack for PIL
+            filename = req.raw
+        except requests.exceptions.RequestException as ex:
+            util.log_error(ex)
+            return None
     try:
-        req = requests.get(url, stream=True, proxies=proxies, headers=headers)
-    except requests.exceptions.RequestException as ex:
-        util.log_error(ex)
-        return None
-    total_length = req.headers.get('content-length', 0)
-    if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
         im = Image.open(filename)
-        im_hash = dhash(im, hash_size=16)
-        return str(im_hash)
-    # if not total_length:  # no content length header
-    #     return False
-    try:
-        im = Image.open(req.raw)
     except OSError:
         return None
     aspect = im.height / im.width
