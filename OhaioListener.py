@@ -665,10 +665,7 @@ def main():
                 except StopIteration:
                     continue
 
-                offset = link.find(post_url)
-                question_cut = link.find('?') if link.find('?') != -1 and link.find('?') > offset + len(
-                    post_url) else None
-                post_number = link[len(post_url) + offset:question_cut].strip()
+                post_number = grabber.get_post_number(link, service)
                 if post_number.isdigit():
                     o_logger.debug(
                         f"Found ID: {post_number} Service: {service_db[service]['name']}")

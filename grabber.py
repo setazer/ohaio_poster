@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+from urllib.parse import urlparse, parse_qs
 
 import pixivpy3
 import requests
@@ -9,6 +10,15 @@ from imagehash import dhash
 
 import util
 from creds import service_db, REQUESTS_PROXY
+
+
+def get_post_number(url, service):
+    url_obj = urlparse(url)
+    if service == 'gel':
+        id_ = parse_qs(url_obj.query)['id'][0]
+    else:
+        id_ = url_obj.path.rpartition('/')[-1]
+    return id_
 
 
 def metadata(service, post_id, pic_name=None):
@@ -88,16 +98,16 @@ def download(url, filename):
     headers = {'user-agent': 'OhaioPoster'}
     if service == 'pix':
         get_pixiv_pic(url, filename)
+        file = filename
     else:
         try:
             req = requests.get(url, stream=True, proxies=proxies, headers=headers)
-            # small hack for PIL
-            filename = req.raw
+            file = req.raw
         except requests.exceptions.RequestException as ex:
             util.log_error(ex)
             return None
     try:
-        im = Image.open(filename)
+        im = Image.open(file)
     except OSError:
         return None
     aspect = im.height / im.width
