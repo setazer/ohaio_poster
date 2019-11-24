@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
+from datetime import datetime
 import os
+import hashlib
+import pixivpy3
 
 import aiofiles as aiofiles
 import aiohttp
@@ -8,6 +11,7 @@ from bs4 import BeautifulSoup
 from imagehash import dhash
 
 from creds import service_db, REQUESTS_PROXY
+from util import in_thread
 
 
 async def metadata(service, post_id, pic_name=None):
@@ -67,7 +71,7 @@ async def metadata(service, post_id, pic_name=None):
     return pic_name, direct, authors, characters, copyrights
 
 
-async def usable_url(url, service):
+def usable_url(url, service):
     if url.startswith('//'):
         url = "https:" + url
     elif url.startswith("/"):
@@ -75,27 +79,34 @@ async def usable_url(url, service):
     return url
 
 
-async def download(url, filename):
-    service = os.path.basename(filename).split('.')[0]
-    await usable_url(url, service)
+async def get_file(url, service, filename):
+    url = usable_url(url, service)
     proxy = REQUESTS_PROXY
     headers = {'user-agent': 'OhaioPoster'}
-    if service == 'pix':
-        headers['Referer'] = 'https://app-api.pixiv.net/'
-        proxy = None
+
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers, proxy=proxy) as req:
-            total_length = req.headers.get('content-length', "0")
-            if os.path.exists(filename) and os.path.getsize(filename) == int(total_length):
-                im = Image.open(filename)
-                im_hash = dhash(im, hash_size=8)
-                return str(im_hash)
-            try:
-                async with aiofiles.open(filename, 'wb') as f:
-                    await f.write(await req.read())
-                im = Image.open(filename)
-            except OSError:
-                return None
+            async with aiofiles.open(filename, 'wb') as f:
+                await f.write(await req.read())
+
+
+def get_pixiv_pic(url, filename):
+    api = pixivpy3.AppPixivAPI()
+    api.download(url, path='', name=filename)
+
+
+async def download(url, filename):
+    service = os.path.basename(filename).partition('.')[0]
+    if service == 'pix':
+        await in_thread(get_pixiv_pic, url, filename)
+    else:
+        await get_file(url, service, filename)
+
+    try:
+        im = Image.open(filename)
+    except OSError:
+        return None
+
     aspect = im.height / im.width
     if not (3 >= aspect >= 1 / 3):
         return None  # skip pictures that are too tall or too wide
