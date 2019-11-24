@@ -809,23 +809,14 @@ def main():
     with session_scope() as session:
         for user, in session.query(User.user_id).filter(User.access >= 1).all():
             send_message(user, "I'm alive!", disable_notification=True)
-    for i in range(1, 5):
-        try:
-            bot.remove_webhook()
-            bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH,
-                            certificate=open(WEBHOOK_SSL_CERT, 'r'))
-            cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
-            if shutting_down:
-                break
-        except Exception as ex:
-            o_logger.error(ex)
-            util.log_error(ex)
-            if not error_msg:
-                error_msg = say_to_owner(f"Бот упал, новая попытка ({i + 1}/5)")
-            else:
-                edit_message(f"Бот упал, новая попытка ({i + 1}/5)",
-                             error_msg.chat.id,
-                             error_msg.message_id)
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH,
+                        certificate=open(WEBHOOK_SSL_CERT, 'r'))
+        cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
+    except Exception as ex:
+        o_logger.error(ex)
+        util.log_error(ex)
     # for i in range(5):
     #     try:
     #         bot.polling(none_stop=True)
