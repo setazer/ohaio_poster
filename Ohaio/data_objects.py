@@ -1,3 +1,7 @@
+from enum import Enum
+from PIL import Image
+
+
 from Ohaio.utils import get_picture_hash
 
 
@@ -16,6 +20,8 @@ class DataObject:
 class Picture(DataObject):
     filename: str = None
     file_type: str = None
+    height: int = None
+    width: int = None
     authors: str = None
     characters: str = None
     copyright: str = None
@@ -27,6 +33,9 @@ class Picture(DataObject):
     def __init__(self):
         self._data = None
 
+    def __repr__(self):
+        return "Picture [{self.service}] ({self.width}x{self.height}) ID: {self.post_id}".format(self=self)
+
     @property
     def data(self):
         return self._data
@@ -34,7 +43,7 @@ class Picture(DataObject):
     @data.setter
     def data(self, value):
         self._data = value
-        self.hash = get_picture_hash(value)
+        self.hash = get_picture_hash(Image.open(value))
 
 
 class Tag(DataObject):

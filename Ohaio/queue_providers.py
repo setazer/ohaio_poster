@@ -1,5 +1,8 @@
 import collections
 
+from Ohaio.utils import prepare_logger
+
+log = prepare_logger(__name__)
 class MemoryQueue:
     def __init__(self, name):
         self._name = name
@@ -22,7 +25,7 @@ class MemoryQueue:
 
     def put(self, data):
         self._queue.appendleft(data)
-        print('added', data, 'to', self._name)
+        log.info(f'added {data} to {self._name}')
 
     def get(self):
         try:
@@ -46,11 +49,11 @@ class MultiMemoryQueue:
         return any(item in queue for queue in self._queues)
 
     def __repr__(self):
-        return "MultiMemoryQueue({})".format(self._queues)
+        return "MultiMemoryQueue([{}])".format('\n'.join(['{queue}: {data}'.format(queue=queue, data=items) for queue, items in self._queues.items()]))
 
     def put(self, data, queue):
-        self._queues.setdefault(queue, MemoryQueue('{} sub-{}'.format(self._name, queue))).put(data)
-        print('added', data, 'to', self._name, 'to subqueue', queue)
+        self._queues.setdefault(queue, MemoryQueue(f'subqueue{queue}')).put(data)
+        log.info(f'added {data} to {self._name}')
 
     def get(self, switch=True):
         try:

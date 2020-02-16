@@ -1,3 +1,8 @@
+from Ohaio.utils import prepare_logger
+
+log = prepare_logger(__name__)
+
+
 class MemoryStorage:
     def __init__(self, name, data=None):
         self._name = name
@@ -11,7 +16,7 @@ class MemoryStorage:
 
     def write(self, data):
         self._storage.add(data)
-        print('stored', data, 'to', self._name)
+        log.info(f'stored {data} to {self._name}')
 
     def search(self, filter_=None, **kwargs):
         if filter_ is None:

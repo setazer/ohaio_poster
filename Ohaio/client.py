@@ -1,20 +1,16 @@
 import requests
 
 
-class HTTPClientMixin:
-    def __init__(self, config, *args, **kwargs):
-        super().__init__(self, config, *args, **kwargs)
-        self.data_client = HTTPClient(config)
-
-
 class HTTPClient:
-    def __init__(self, config):
+    def __init__(self, config=None):
         self._session = None
-        try:
-            section = dict(config['Proxies'])
-        except KeyError:
-            section = {}
-        self._proxies = section or None
+        self._proxies = None
+        if config:
+            try:
+                section = dict(config['Proxies'])
+            except KeyError:
+                section = {}
+            self._proxies = section or None
 
     @property
     def session(self):

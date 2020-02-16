@@ -1,3 +1,8 @@
+from Ohaio.utils import prepare_logger
+
+log = prepare_logger(__name__)
+
+
 class Channel:
     def publish(self, data):
         self.preprocess(data)
@@ -23,7 +28,7 @@ class VkChannel(Channel):
         self.app_id = section['app_id']
 
     def process(self, data):
-        print('Posted', data, 'to VK')
+        log.info(f'Posted {data} to VK')
 
 
 class TelegramChannel(Channel):
@@ -33,7 +38,7 @@ class TelegramChannel(Channel):
         self.group_id = section['group_id']
 
     def process(self, data):
-        print('Posted', data, 'to Telegram')
+        log.info(f'Posted {data} to Telegram')
 
 
 class TumblrChannel(Channel):
@@ -46,6 +51,6 @@ class TumblrChannel(Channel):
         self.oauth_secret = section['oauth_secret']
 
     def process(self, data):
-        print('Posted', data, 'to Tumblr')
+        log.info(f'Posted {data} to Tumblr')
 
 

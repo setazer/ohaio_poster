@@ -1,5 +1,5 @@
 from Ohaio.data_objects import Tag, Picture
-from Ohaio.sources import PictureSource, Booru
+from Ohaio.sources import Booru
 
 
 class QueueController:
