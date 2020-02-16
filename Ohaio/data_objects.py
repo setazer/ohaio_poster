@@ -1,4 +1,3 @@
-from enum import Enum
 from PIL import Image
 
 
@@ -20,8 +19,8 @@ class DataObject:
 class Picture(DataObject):
     filename: str = None
     file_type: str = None
-    height: int = None
-    width: int = None
+    height: int = 0
+    width: int = 0
     authors: str = None
     characters: str = None
     copyright: str = None

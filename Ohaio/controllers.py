@@ -1,5 +1,5 @@
 from Ohaio.data_objects import Tag, Picture
-from Ohaio.sources import Booru
+from Ohaio.sources.base import Booru
 
 
 class QueueController:
@@ -21,9 +21,9 @@ class QueueController:
 
 
 class MonitorController:
-    def __init__(self, monitor_storage, ohaio_controller):
+    def __init__(self, monitor_storage, queue_controller):
         self.monitor = monitor_storage
-        self.ohaio = ohaio_controller
+        self.queue = queue_controller
 
     def store(self, data: Picture, **kwargs):
         self.monitor.write(data, **kwargs)
@@ -31,7 +31,7 @@ class MonitorController:
     def publish(self, filter_=None, **kwargs):
         data = self.monitor.search(filter_, **kwargs)
         for item in data:
-            self.ohaio.store(item, **kwargs)
+            self.queue.store(item, **kwargs)
             self.monitor.remove(lambda x: x in data)
 
 
@@ -53,5 +53,6 @@ class MonitorChecker:
             source: Booru = next(source for source in self.sources if tag.service == source.service)
             last_check = tag.last_check
             req = source.search(tag.name)
+
 
 

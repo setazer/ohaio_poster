@@ -3,6 +3,8 @@ import collections
 from Ohaio.utils import prepare_logger
 
 log = prepare_logger(__name__)
+
+
 class MemoryQueue:
     def __init__(self, name):
         self._name = name
