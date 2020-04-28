@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+from time import sleep
 from urllib.parse import quote
 
 import requests
@@ -37,14 +38,17 @@ def check_recommendations(new_tag=None):
                 Tag).filter_by(service=service, tag=new_tag).all())}
     qnh = queue + history
     max_new_posts_per_tag = 20
+    new_posts_max_total = 200
     tags_api = 'http://' + service_db[service]['posts_api']
     login = service_db[service]['payload']['user']
     api_key = service_db[service]['payload']['api_key']
     # post_api = 'https://' + service_db[service]['post_api']
     new_posts = {}
+    total_posts = 0
     proxies = REQUESTS_PROXY
     ses = requests.Session()
     tags_slices = [list(tags.keys())[i:i + 5] for i in range(0, len(tags), 5)]
+    stop_scan = False
     for (n, tags_slice) in enumerate(tags_slices, 1):
         tag_aliases = {}
         req = ses.get(tags_api.format('+'.join(
@@ -101,6 +105,7 @@ def check_recommendations(new_tag=None):
             if (new_post_count[post_tag] < max_new_posts_per_tag and
                     post_id > tags[post_tag].get('last_check')):
                 new_post_count[post_tag] += 1
+                total_posts += 1
                 new_posts[str(post_id)] = {
                     'authors': ' '.join({f'#{x}' for x in post.get('tag_string_artist').split()}),
                     'chars': ' '.join({f"#{x.split('_(')[0]}" for x in
@@ -111,6 +116,8 @@ def check_recommendations(new_tag=None):
                     'file_url': post['large_file_url'], 'file_ext': post['file_ext'],
                     'dimensions': f"{post['image_height']}x{post['image_width']}",
                     'safe': post['rating'] == "s"}
+        if total_posts > new_posts_max_total:
+            break
         if (n % 5) == 0:
             edit_markup(srvc_msg.chat.id, srvc_msg.message_id,
                         reply_markup=markup_templates.gen_status_markup(
@@ -189,6 +196,7 @@ def check_recommendations(new_tag=None):
                 pic.file_id = mon_msg.photo[0].file_id
                 tag_item = session.query(Tag).filter_by(tag=new_post['tag'], service=service).first()
                 tag_item.last_check = max((tag_item.last_check, int(post_id)))
+        sleep(3)
     delete_message(srvc_msg.chat.id, srvc_msg.message_id)
 
 
